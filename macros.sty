@@ -1,0 +1,72 @@
+% !TEX root = ./main.tex
+% The above line is a magic comment that tells text editors which file to compile.
+
+\ProvidesPackage{macros}
+
+\newcommand{\defined}[1]{\textit{#1}}
+
+\DeclarePairedDelimiter\ceil{\lceil}{\rceil}
+\DeclarePairedDelimiter\floor{\lfloor}{\rfloor}
+\newcommand{\defeq}{\vcentcolon=}
+\newcommand{\eqdef}{=\vcentcolon}
+\newcommand{\concatenate}[0]{\cdot}
+\newcommand{\abs}[1]{|{#1}|}
+\newcommand{\bigo}[1]{\mathcal{O}(#1)}
+\newcommand{\fun}[3]{{#1}: {#2} \rightarrow {#3}}
+\newcommand{\partialfun}[3]{{#1}: {#2} \rightharpoonup{#3}}
+\DeclareMathOperator{\domain}{dom}
+\DeclareMathOperator{\codomain}{codom}
+\newcommand{\set}[1]{\{#1\}}
+\newcommand{\disjointunion}[0]{\dot{\cup}}
+\newcommand{\powerset}[1]{\mathcal{P}({#1})}
+\newcommand{\divides}[0]{\mathrel{|}}
+\newcommand{\st}[0]{:}
+% \newcommand{\groupaddsym}[0]{\oplus}
+% \newcommand{\biggroupadd}[0]{\bigoplus}
+% \newcommand{\groupadd}[2]{{#1} \groupaddsym {#2}}
+% \newcommand{\groupsubtract}[2]{{#1} \ominus {#2}}
+% \newcommand{\inverseadd}[1]{-{#1}}
+
+\DeclareMathOperator{\enc}{enc}
+\DeclareMathOperator{\h}{h}
+\DeclareMathOperator{\f}{f}
+\DeclareMathOperator{\g}{g}
+\DeclareMathOperator{\m}{m}
+\DeclareMathOperator{\p}{p}
+\DeclareMathOperator{\V}{V}
+\DeclareMathOperator{\E}{E}
+\DeclareMathOperator{\xor}{xor}
+\DeclareMathOperator{\priority}{priority}
+\DeclareMathOperator{\lbl}{label}
+
+\DeclareMathAlphabet{\mymathbb}{U}{bbold}{m}{n}
+\newcommand{\neutraladd}[0]{\mymathbb{0}}
+
+\newcommand{\N}[0]{\mathds{N}}
+\newcommand{\Np}[0]{\mathds{N}^{+}}
+\newcommand{\Z}[0]{\mathds{Z}}
+
+
+\newcommand{\nil}[0]{\mathtt{nil}}
+\newcommand{\true}[0]{\mathtt{true}}
+
+\newcommand{\return}[0]{\textbf{return }}
+
+\usepackage{environ}
+\makeatletter
+\newsavebox{\measure@tikzpicture}
+\NewEnviron{scaletikzpicturetowidth}[1]{%
+  \def\tikz@width{#1}%
+  \def\tikzscale{1}\begin{lrbox}{\measure@tikzpicture}%
+  \BODY
+  \end{lrbox}%
+  \pgfmathparse{#1/\wd\measure@tikzpicture}%
+  \edef\tikzscale{\pgfmathresult}%
+  \BODY
+}
+\makeatother
+
+%environments
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{proposition}{Proposition}

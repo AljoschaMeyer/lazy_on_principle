@@ -1,0 +1,188 @@
+% https://2024.splashcon.org/track/splash-2024-Onward-papers#Call-for-Papers
+% 13 Pages, excluding bibliography
+
+\documentclass[sigplan,screen,10pt,anonymous,review]{acmart}
+% \documentclass[11pt,conference]{IEEEtran}
+
+\input{libs.tex}
+\usepackage{macros}
+
+\title{Lazy on Principle}
+% \title{Principled Lazy Sequences}
+
+\author{Aljoscha Meyer}
+\affiliation{TU Berlin, Germany}
+\email{research@aljoscha-meyer.de}
+
+\begin{document}
+
+\begin{abstract}
+This is the abstract.
+\end{abstract}
+
+\maketitle
+
+\section{Introduction}\label{introduction}
+
+When sequences of data become too large to fit into memory at once, programs need to process them lazily. From the humble iterator to asynchronous APIs for streams and sinks with error handling and buffering, every language needs libraries for working with lazy sequences.
+
+For such a fundamental, conceptually simple, and language-agnostic problem, one might expect a principled, unified solution that programming language designers and library authors can turn to and implement in their language of choice.
+
+But the opposite is the case. Learning a new programming language implies learning yet another, slightly (or not so slightly) different set of APIs for working with sequences. Even within a single language, there are often competing libraries --- \cref{wtfjs} lists some thirty popular Javascript libraries alone.
+
+Starting from ``\textit{Which} abstraction is the best?'', we quickly moved to ``\textit{Is} there a best abstraction?'', and then to the more constructive ``\textit{What} would make an abstraction the best?''. In this paper, we present our answers to these questions. In a nutshell:
+
+\begin{enumerate}
+    \item Abstractions for working with lazy sequences in the wild are ad-hoc designs.
+    \item We propose a principled way of evaluating them.
+    \item No prior abstractions satisfy all evaluation criteria.
+    \item We develop abstractions that do.
+    \item \sout{Everybody everywhere should use our abstractions without further reflection.}
+\end{enumerate}
+
+Note that we will focus on strictly evaluated languages. This makes explicit the design elements that enable laziness.
+
+We further restrict our focus to the two simplemost ways of interacting with a (possibly infinite) sequence: \textit{consuming} a sequence item by item, or \textit{producing} a sequence item by item. Both modes of interaction are of great practical interest, they correspond, for example, to reading and writing bytes over a network. We do not consider more complex settings such as random access, or mixing reading and writing.
+
+\subsection{Evaluating Sequence APIs}
+
+Equipped with a vague notion of wanting to ``lazily consume or produce sequences'', how can we do better than simply trying to find a design that satisfies all use-cases we can come up with? In mathematics, one would define a set of criteria that a solution should satisfy, in a way that makes no assumptions about any possible solutions themselves.
+
+For example, a mathematician might want to work with numbers ``with no gaps in-between'' (i.e., the real numbers). They might formalize this intuitive notion as a minimal, infinite, complete ordered field. Any candidate construction (say, the Dedekind cuts of rational numbers), can now be objectively measured against the requirements. As an added bonus, it turns out that all constructions satisfying the abstract requirements are isomorphic. Some constructions might be more convenient than others in certain settings, but ultimately, they are all interchangeable.
+
+This approach of construction-independent axiomization is the only way we can conceive to clear the proliferation of competing library designs.
+
+Sadly, we could not find an airtight mathematical formalism to capture our problem space. The criteria we now present leave gaps that must be filled by argumentation rather than proof, the API design still remains part art as much as science. This makes the following paragraphs the weakest link of this paper. We nevertheless think that both our approach and the designs it yields are novel --- and useful.
+
+The criteria by which we shall evaluate lazy sequence abstractions are orthogonality, symmetry, and expressivity.
+
+\textbf{Orthogonality} asks that no aspect of the API design can be expressed through other aspects of the design. The design must be minimal in that regard.
+
+% \textbf{Universality} asks that the same fundamental design works irrespective of whether processing is synchronous or asynchronous, buffered or unbuffered, etc. We want a solution that is applicable indepedently of such implementation details.
+
+\textbf{Symmetry} asks that reading and writing data should be dual. The two intuitive notions of producing and consuming a sequence item by item are fully symmetric and sit on the same level of abstraction. Any API design that introduces an imbalance between the two must either be contaminated with incidental complexity, or it must be missing functionality for one of the two access modes.
+
+\textbf{Expressivity} asks that the API design is powerful enough to get the job done, but also no more powerful than necessary. This is by far the most vague of our criteria, because we cannot simply equate more expressivity with a better design. We \textit{can}, however, draw on the theory of formal languages to categorize the classes of sequences whose consumption of production can be described by an API. Some of these classes are more natural candidates than others.
+
+Of these criteria, orthogonality is arguably the least controversial. Symmetry turns out to be the one we generally find the most neglected in the wild, and strict adherence to symmetry shapes the designs we propose to differ significantly from any others we are aware of. Expressivity might have the weakest definition, but turns out to be rather unproblematic: real-world constraints on the APIs lead to a level of expressivity that also has a convincing formal counterpart --- the $\omega$-regular languages --- making us quite confident about the appropriate level of expressivity.
+
+\subsection{Case Study: Strict Sequences}
+
+Finite case: isomorphism to regular expressions.
+
+\section{Related Work}\label{related_work}
+
+Iterees: 
+\url{https://link.springer.com/chapter/10.1007/978-3-642-29822-6_15}
+\url{https://hackage.haskell.org/package/iterIO-0.2.2/docs/Data-IterIO.html}
+
+\section{Evaluating Abstractions}\label{evaluating_others}
+
+Notation for (the core design behind) APIs.
+
+Disclaimer on choosing the APIs to present here.
+
+Iterator: js and rust.
+
+Co-Iterator: nobody? Java string builder, rust fmt, clojure sequence. rust for-loop.
+
+Stream: rust, java reactivex. Recoverable vs irrecoverable errors.
+
+Sink: lack of symmetry.
+
+\section{Deriving Our Design}\label{derive}
+
+\section{Evaluating Our Design}\label{evaluating_ours}
+
+Symmetry: in-memory channel, and buffer. Also, encoder and decoders.
+
+Expressivity: omega-regular expressions. Example uses.
+
+\section{Sugary Syntax}\label{syntax}
+
+conducer (aka super-coroutine, Inum, generalized anti-pipe)
+
+pro and con as specialiazations of conducers, and alternatives to generators and for loops respectively.
+
+\section{Beyond the Basics}\label{fun}
+
+Lengths and limits.
+
+Asynchrony.
+
+Buffered.
+
+Slices.
+
+Trees. DAGs? Digraphs?
+
+Coroutines/generators generalized.
+
+Turing machines.
+
+Elastic Turing machines.
+
+Outside movement.
+
+\section{Conclusion}\label{conclusion}
+
+This is the conclusion~\cite{minsky2003set}.
+
+On a meta note, this paper provides evidence that you can share research results with broad applications to a wide range of programming practitioners, without assuming the kind of deep, intuitive familiarity with the Haskell standard library that requires years of practice to obtain. How did that ever become accepted practice in the first place?
+
+\section{Appendix A: Javascript Libraries}\label{wtfjs}
+
+This list of javaScript libraries for working with lazy sequences is intended to demonstrate that there is a clear need for a solid design that people can fall back to rather than reinventing ad-hoc wheels over and over. We list libraries with at least 200 stars on Github, as of February 2024, found by searching Gihub for ``stream'', ``observable'', and ``reactive''.
+
+\begin{itemize}
+    \item \url{https://github.com/staltz/xstream}
+    \item \url{https://github.com/mafintosh/streamx}
+    \item \url{https://github.com/getify/monio}
+    \item \url{https://github.com/getify/asynquence}
+    \item \url{https://github.com/cyclejs/cyclejs}
+    \item \url{https://github.com/winterbe/streamjs}
+    \item \url{https://github.com/winterbe/sequency}
+    \item \url{https://github.com/pull-stream/pull-stream}
+    \item \url{https://github.com/dionyziz/stream.js}
+    \item \url{https://github.com/caolan/highland}
+    \item \url{https://github.com/kefirjs/kefir}
+    \item \url{https://github.com/baconjs/bacon.js}
+    \item \url{https://github.com/cujojs/most}
+    \item \url{https://github.com/callbag/callbag}
+    \item \url{https://github.com/paldepind/flyd}
+\end{itemize}
+    
+The following libraries do not explicitly define \textit{streams}, but they do work with \textit{observables}. Observables are an abstraction for values that (discreetly) vary over time. For most intents and purposes, this is isomorphic to the notion of a stream.
+
+\begin{itemize}
+    \item \url{https://github.com/reactivex/rxjs}
+    \item \url{https://github.com/tc39/proposal-observable}
+    \item \url{https://github.com/zenparsing/zen-observable}
+    \item \url{https://github.com/vobyjs/oby}
+    \item \url{https://github.com/adamhaile/S}
+    \item \url{https://github.com/luwes/sinuous}
+    \item \url{https://github.com/mobxjs/mobx}
+    \item \url{https://github.com/fynyky/reactor.js}
+    \item \url{https://github.com/ds300/derivablejs}
+    \item \url{https://github.com/elbywan/hyperactiv}
+    \item \url{https://github.com/component/reactive}
+    \item \url{https://github.com/mattbaker/Reactive.js}
+\end{itemize}
+
+These libraries exist in addition to language-level or runtime-level APIs such as the following:
+
+\begin{itemize}
+    \item \href{https://nodejs.org/api/stream.html}{Node JS Streams}, and their evolution: \begin{itemize}
+        \item \href{https://nodejs.org/docs/v0.1.100/api.html}{streams0}
+        \item \href{https://nodejs.org/docs/v0.4.0/api/streams.html}{streams1}
+        \item \href{https://nodejs.org/docs/v0.10.0/api/stream.html}{streams2}
+        \item \href{https://nodejs.org/docs/v0.11.5/api/stream.html}{streams3}
+    \end{itemize}
+    \item \href{https://streams.spec.whatwg.org/}{WHATWG Streams}
+    \item \href{https://tc39.es/ecma262/multipage/control-abstraction-objects.html#sec-%iteratorprototype%-object}{ECMAScript Iterator}
+    \item \href{https://tc39.es/ecma262/multipage/control-abstraction-objects.html#sec-asynciteratorprototype}{ECMAScript AsyncIterator}
+\end{itemize}
+
+\bibliographystyle{alphaurl}
+\bibliography{main}
+\end{document}
