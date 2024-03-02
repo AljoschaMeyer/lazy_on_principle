@@ -70,7 +70,7 @@ TODO argue for *consistency* as a cure to the painfulness of building async stuf
 
 To obtain a first indicator for an appropriate level of expressivity, we examine the world of non-lazy sequences, i.e., sequences that can be fully represented in memory.
 
-\subsection{Case Study: Strict Sequences}
+\subsection{Case Study: Strict Sequences}\label{strict_sequences}
 
 Representing sequences in memory can be done in such a natural way that we have never seen any explicit discussion. We shall assume a typical type system with product types (denoted $(S, T)$), sum types (denoted $S + T$), and homogeneous array types (denoted ($[T]$)).
 
@@ -116,7 +116,7 @@ We specify an API as a list of named types (typically functions). Each API can q
 
 \begin{lstlisting}[language=Python]
 API Iterator<P, I>
-    next: (P) -> (I, P) | ()
+    next: P -> (I, P) | ()
 \end{lstlisting}
 
 This pseudo-type fragment states that in order to obtain a concrete \texttt{Iterator}, one needs two types: a type $P$ (\textbf{P}roducer) and a type $I$ (\textbf{I}tem). These types have to be related through existence of a function \texttt{next}, which maps a producer to either an item and and a new producer, or to a value that signifies that no further items can be produced.
@@ -141,7 +141,7 @@ A different example is Swift\footnote{\url{https://developer.apple.com/documenta
 
 \begin{lstlisting}[language=Python]
 API FallibleIterator<P, I, E>
-    next: (P) -> (I, P) | () | E
+    next: P -> (I, P) | () | E
 \end{lstlisting}
 
 This particular API design violates minimality: removing the option of returning the unit type would leave the degree of expressivity unchanged, since one could always instantiate $E$ as a sum type of the unit type and an actual error type. It might be tempting to argue that the Swift API communicates intent more clearly, and allows for nicer library functions for working with streams. But these conveniences and specializations could just as well be implemented as special cases of the more general, underlying pattern. Rust nicely demonstrates this by offering a host of functions\footnote{\url{https://docs.rs/futures/latest/futures/stream/trait.TryStreamExt.html}} for working with streams whose items are a sum type of actual items and error values. Offering a special case as the most fundamental API, like Swift does, unnecessarily reduces expressivity.
@@ -155,27 +155,168 @@ The story for asynchronous \textit{consumers} is usually highly asymmetrical aga
 % Universality and specialization to obtain iterators.
 
 
-\section{Deriving Our Design}\label{derivewwww}
+\section{A Principled Design}\label{main_design}
 
-From this backdrop of rather inconsistent designs, we now present our alternatives. We develop --- in tandem --- APIs for producing and consuming sequences, guided by minimality, symmetry, and expressivity (\cref{derive}). Next, we argue that the designs are indeed sufficiently symmetric and of appropriate expressiveness (\cref{evaluating_ours}) --- if our arguments are not fully formal, they are at least \textit{formalizable}. Finally, we sketch some consequences the designs could have for language-level features such as generators or for loops (\cref{syntax}).
+From this backdrop of rather inconsistent designs, we now present our alternatives. We derive --- in tandem --- APIs for producing and consuming sequences, guided by minimality, symmetry, and expressivity (\cref{derive}). Next, we argue that the designs are indeed sufficiently symmetric and of appropriate expressiveness (\cref{evaluating_ours}) --- if our arguments are not fully formal, they are at least \textit{formalizable}. Finally, we sketch some consequences the designs could have for language-level features such as generators or for loops (\cref{syntax}).
 
 \subsection{Deriving Our Design}\label{derive}
 
-\section{Evaluating Our Design}\label{evaluating_ours}
+To derive a principled design step by step, we start with simplemost producer API: a producer that emits an infinite stream of items of the same type.
 
-Symmetry: in-memory channel, and buffer. Also, encoder and decoders.
+\begin{lstlisting}[language=Python]
+API InfiniteProducer<P, I>
+    produce: P -> (I, P)
+\end{lstlisting}
 
-Justifying symmetry: ultimately, you want to pipe or buffer. Also, getting this right is simpler than getting them wrong.
+An iterator, in contrast, expresses a \textit{finite} stream of items, by making the result of a sum type with a unit type otion to signal termination. We can easily abstract over both through a simple realization: we can rewrite the \texttt{produce} function of the \texttt{InfiniteProducer} as a sum with the empty type, without changing the semantics at all (it is impossible to provide an instance of the empty type, the empty type is the neutral element of type sums):
 
-\subsection{Expressivity}\label{showing_expressivity}
+\begin{lstlisting}[language=Python]
+API AlsoAnInfiniteProducer<P, I>
+    produce: P -> (I, P) | !
+\end{lstlisting}
 
-Expressivity: omega-regular expressions. Example uses.
+Now, the infinite producer and the finite producer have the exact same form, and we can introduce a type parameter for the summand to express either:
 
-\section{Sugary Syntax}\label{syntax}
+\begin{lstlisting}[language=Python]
+API Producer<P, I, F>
+    produce: P -> (I, P) | F
+\end{lstlisting}
 
-conducer (aka super-coroutine, Inum, generalized anti-pipe)
+Setting the type parameter \texttt{F} (for \textit{\textbf{f}inal item}) to \texttt{!} or \texttt{()} yields the infinite streams and the finite streams over a single type of items, respectively.
+
+Another natural choice for \texttt{F} are irrecoverable error types; most APIs with this design denote the type parameter as a type of errors explicitly. This denotation obscures how the same abstraction can also represent iterators or infinite streams, however.
+
+Moreover, it obscures that \texttt{F} might be another producer itself, with which to continue production. Through this use of the API, we can effectively concatenate any producer after any finite producer. This usage is the cornerstone of achieving the expressivity of the $\omega$-regular languages, and one we have not encountered in the wild at all.
+
+To give a tangible example of how this degree of expressivity can be useful, consider a networking protocol that proceeds in stages: first a handshake for connection establishment, followed by an exchange of key-value pairs that signify the capabilities of an endpoint, followed by the application-level message exchange. With an API parameterized over arbitrary final values, you can implement each stage in a type-safe way, and then concatenate the stages both in execution and on the type-level. Traditional APIs force programmers to either lump the different kinds of messages (handshake, key-value pairs, application-level) into a single sum type, or to forego helpful typing altogether and operate on the level of bytes.
+
+A symmetric consumer API should be one that can be given either an item of type \texttt{I} --- returning a new consumer value to continue the process --- or a final item of some type \texttt{F} --- without returning a consumer to continue with. Ideally, we should be able to mechanically derrive this API as a dual of the producer API. A tempting option is to ``flip all arrows'' and simply swap argument and return type of the \texttt{produce} function:
+
+\begin{lstlisting}[language=Python]
+API Recudorp<P, I, F>
+    ecudorp: ((I, P) | F) -> P
+\end{lstlisting}
+
+We can clean this up by splitting the function of a sum type argument into two independent functions (both versions are equivalent), and giving more conventional names:
+
+\begin{lstlisting}[language=Python]
+API NotQuiteConsumer<C, I, F>
+    consume: (I, C) -> C
+    create: F -> C
+\end{lstlisting}
+
+Unfortunately, this does not give the kind of API we were hoping for. The \texttt{consume} function is appropriate, but the second function is not closing a consumer, but creates a consumer. A straightforward dual construction gives too strong of a reversal to yield an API suitable for practical use.
+
+Instead of a fully dual construction, we instead derive a consumer API in steps analogous to those for deriving the \texttt{Producer} API. We start again with the consumers of an infinite sequence and the consumer of a finite sequence:
+
+\begin{lstlisting}[language=Python]
+API InfiniteConsumer<C, I>
+    consume: (I, C) -> C
+
+API FiniteConsumer<C, I>
+    consume: (I, C) -> C
+    close: C -> C
+\end{lstlisting}
+
+We can again introduce a type parameter for the final sequence item to unify the APIs; observe how using $!$ or $()$ for the parameter \texttt{F} in the following API yields results isomorphic to the \texttt{InfiniteConsumer} and \texttt{FiniteConsumer} APIs respectively:
+
+\begin{lstlisting}[language=Python]
+API Consumer<C, I, F>
+    consume: (I, C) -> C
+    close: (F, C) -> ()
+\end{lstlisting}
+
+This API is fully symmetric to the \texttt{Producer}: the consumer can consume exactly those sequences that a producer can produce. It is rather unusual in that we have never seen an API whose \texttt{close} function takes an argument in the wild.
+
+Another unusual aspect is the inability of a consumer to report errors to its calling code. This is severe enough of a departure from typical APIs that we discuss this in more detail in \cref{communication_flow}. But first, we will argue that these \texttt{Producer} and \texttt{Consumer} APIs indeed fulfil our initial design requirements.
+
+\subsection{Evaluating Our Design}\label{evaluating_ours}
+
+Convincing arguments for the symmetry of the APIs are not immediately apparent; while we derived both APIs throuh analogous steps, they are not immediately dual in any obvious sense, and they even have a different number of functions. The closest we could come to a formal argument is to show that they compose in a satisfying way.
+
+Composing a producer with a consumer amounts to piping the data that the producer produces into the consumer:
+
+\begin{algorithmic}
+\Require $P, C, I, F$ are types such that \texttt{Producer<P, I, F>} and \texttt{Consumer<C, I, F>}
+\Procedure{pipe}{$p: P$, $c: C$}{$: ()$}
+    \Loop
+        \State $x \gets \Call{produce}{p}$
+        \If{$x$ is of type $F$}
+            \State \Call{close}{$x, c$}
+            \State \texttt{return} $()$
+        \Else
+            \State $c \gets \Call{consume}{x.0}$
+            \State $p \gets x.1$
+        \EndIf
+    \EndLoop
+\EndProcedure
+\end{algorithmic}
+
+Notice that the \texttt{pipe} function returns the unit type, it leaks no information to the outside. More traditional APIs have no way to funnel the final (usually irrecoverable error) value of the producer to the consumer, so the pipe function has to return that value to the outside. Similarly, APIs that allow consumers to emit errors also have to forward such errors from the pipe function.
+
+On a purely abstract level, composing to the unit type evokes the concept of an element and its inverse composing to an identity element. This seems as strong a formal notion of symmetry we can hope for, without \textit{actually} formalizing things.
+
+More concretely, this means that a producer and a consumer together can fully describe a (sub-)program that processes a data stream. While traditional APIs also allow building up programs by combining and modifying producers and consumers, there always has to be ad-hoc glue code for handling errors, and for moving from one stage of processing to the next. Our APIs capture a fuller set of tasks of such programs. In principle, with an expressive library for constructing producers and consumers, it should be possible to describe much wider classes of programs by piping a single producer into a single consumer, with no glue code or ad-hoc error handling. In particular, progressing from one processing stage to the next can be done by having the producer emit a new producer as a final value, and the consumer pipe this value into an inner consumer in its \texttt{close} function.
+
+We can make a similar argument for composing the other way around: it should be possible to create a pair of a consumer and a producer such that the producer produces everything that the consumer consumes, in the same order (an in-memory queue). This is, in some vague sense, the neutral element of transformation steps in a pipeline (we return to this concept in \cref{conducer}). Here again, we see the benefits of the \texttt{close} function taking an argument: we can map this argument directly to the final value to be emitted by \texttt{produce}.
+
+Libraries without this feature usually only offer queues parameterized over a single item type. One common tasks where this becomes unnecessarily restrictive include adding intermediate queues for buffering that can also delay propagating an error to the queue's consumer until all items that were emitted before the error have been consumed. Another usecase is testing: if you want to test a component by replacing its input producer with a stub, you cannot use the normal in-memory queue as a replacement, because it cannot emit final values (i.e., errors, in most libraries) on demand.
+
+Having argued that our design is indeed symmetric in a meaningful way, we turn to the question of expressivity. Our core argument rests on the observation that each \texttt{Producer} (or \texttt{Consumer}) defines a formal language over an alphabet of atomic types. More precisely, a \texttt{Producer<P, I, F>} emits an arbitrary number of repetitions of values of type $I$, followed by a single value of type $F$. In more traditional notation of a language as a set of strings, it denotes the set $\set{I}^{\ast} \circ \set{F}$.
+
+Given this mapping from sequence APIs to languages, which class of languages do our APIs describe? We claim they --- in concert with sums, products, and functions --- describe the union of the regular and the $\omega$-regular languages.
+
+The \textit{$\omega$-regular languages} over $\Sigma$ are the sets of infinite strings over $\Sigma$ that are either a concatenation of infinitely many words from the same regular language\footnote{We assume familiarity with regular languages, for an introduction see~\cite{hopcroft1969formal}, for example. Or do the sensible thing of searching for ``regular language'' on Wikipedia.} over $\Sigma$ (\textit{infinite iteration}), or the concatenation of a regular language and an $\omega$-regular language over $\Sigma$, or a choice between finitely many $\omega$-regular languages over $\Sigma$.
+
+As already argued in \cref{strict_sequences}, sum types and product tyes correspond to choice and concatenation of regular expressions respectively. Unlike the strict case, we cannot rely on homogeneous arrays to act as the counterpart to the Kleene operator, but this appears to be where the \texttt{Producer} API comes in (everything applies analogously for the \texttt{Consumer} API): a \texttt{Producer<P, I, F>} can produce an arbitrary number of repetitions of \texttt{I}s, followed by a single \texttt{F}. In particular, \texttt{Producer<P, I, ()>} corresponds to the Kleene operator, and \texttt{Producer<P, I, !>} corresponds to infinite iteration.
+
+Unfortunately, this simple perspective is not fully accurate. Product types as concatenation are too powerful for us: consider a product $(P_1, P_2)$, where $P_1$ is a \texttt{Producer<P, I, !>}. The corresponding language would be a concatenation with an $\omega$-language on the left, but this is explicitly ruled out by the definition of $\omega$-regular languages. Another facet of the same problem is that the type $(S, T)$ is not one that describes \textit{first} emitting an $S$ and \textit{then} a $T$, as it presents both simultaneously.
+
+To solve this, we can restrict the set of well-formed sequence types we consider to pairs $(S, () \rightarrow T)$ for (sums of) non-repeated types $S$ and arbitrary types $T$, and \texttt{Producer<P, S, T>} for repeated types $S$. This removes the ability to express concatenations with an $\omega$-language as the left operand, and introduces the required indirection to express ``first $S$, then $T$'' (remember that we assume our functions to abstract over effects, so there might well be asynchronicity involved in obtaining the $T$ after processing the $S$).
+
+We shall not dwell on this subtlety any further, because it does not affect our two main points: our API is expressive enough to decribe regular ($\omega$-)regular languages, whereas a more traditional API \textit{without} a dedicated type for the final item is \textit{not} expressive enough, resulting in an unjustified reduction in expressive power compared to representing strict sequences in memory.
+
+\subsection{Communication Flow}\label{communication_flow}
+
+At this point, we claim to have found APIs that satisfy exactly what we set out to achieve: symmetric consumption and production of $\omega$-regular sequences with a minimal interface. Unfortunately, there is still a problem: if we were to use the consumer API to write data to a network, the API would be unable to report any failures. More generally speaking, code interacting with a \textit{producer} can obtain information \textit{from} the producer but cannot pass any information \textit{to} the producer; conversely, code interacting with a \textit{consumer} can pass information \textit{to} the consumer but cannot obtain any information \textit{from} the consumer.
+
+This rigorous a restriction on communication flows evokes design choices such as the unidirectional communication primitives of security-focussed micro-kernels such as seL4~\cite{murray2013sel4}, so there clearly is a place for such constrained APIs. But the consumer API is too constrained for network programming.
+
+
+
+To allow for the consumer to communicate back to the code that uses it, we add a new 
+
+
+
+
+
+\begin{lstlisting}[language=Python]
+API ConsumerAttempt<C, I, F, S>
+    consume: (I, C) -> C | S
+    close: (F, C) -> () | S
+\end{lstlisting}
+    
+\begin{lstlisting}[language=Python]
+API Producer<P, I, F, S>
+    produce: P -> (I, P) | F
+    stop: (P, S) -> ()
+\end{lstlisting}
+
+\section{Working With Producers and consumers}
+
+conducer (aka super-coroutine, Inum, generalized anti-pipe); queue, map, encoders and decoders.
+
+\subsection{Language-Level Consequences}\label{syntax}\label{conducer}
 
 pro and con as specialiazations of conducers, and alternatives to generators and for loops respectively.
+
+\subsection{Bulk Processing}
+
+Buffered.
+
+Slices. (should be strict subtypes)
+
+mention vectored io?
 
 \section{Beyond the Basics}\label{fun}
 
@@ -184,10 +325,6 @@ Combinators.
 Lengths and limits.
 
 Asynchrony.
-
-Buffered.
-
-Slices. (should be strict subtypes)
 
 Trees. DAGs? Digraphs?
 
@@ -205,13 +342,15 @@ from sequences to sets (should be easier)?
 
 proper duality?
 
+Specalization, but from where? Turing machine? Supercoroutine?
+
 \section{Conclusion}\label{conclusion}
 
 TODO
 
-vision of unified, consistent APIs throughout a full language ecosystem.
+vision of unified, consistent APIs throughout a full language ecosystem. Getting things right is simpler than getting them wrong.
 
-On a meta note, this paper constitutes evidence that you can share research results with broad applications to a wide range of programming practitioners, without assuming the kind of deep, intuitive familiarity with the Haskell standard library that requires years of practice to obtain. How did that ever become accepted practice in the first place?
+On a meta note, this essay constitutes evidence that you can share research results with broad applications to a wide range of programming practitioners, without assuming the kind of deep, intuitive familiarity with the Haskell standard library that requires years of practice to obtain. How did that ever become accepted practice in the first place?
 
 \section{Appendix A: Javascript Libraries}\label{wtfjs}
 
