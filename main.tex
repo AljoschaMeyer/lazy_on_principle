@@ -338,7 +338,53 @@ Setting \texttt{I1} and \texttt{F1} to $!$ yields an abstraction isomorphic to \
 
 \subsection{Language-Level Consequences}\label{syntax}
 
-pro and con as specialiazations of conducers, and alternatives to generators and for loops respectively.
+Many programming languages offer generator syntax for creating iterators, and for loops for consuming iterators. A language designed with our APIs in mind could provide more powerful syntax.
+
+Generators\footnote{\url{https://peps.python.org/pep-0255/}} provide dedicated syntax for creating producers, with \texttt{yield} emitting repeated items and \texttt{return} emitting the final value. As an example, the following pseudo-code emits the numbers from zero to nine and then the final string ``hi''. we use atypical choices of keywords (\texttt{producer} instead of \texttt{generator}, \texttt{produce} instead of \texttt{yield}, and \texttt{produce final} instead of \texttt{return}) to be obnoxiously explicit about the ntended semantics, and to prepare for a symmtric consumer design:
+
+\begin{lstlisting}[language=Python]
+producer
+    i = 0
+    while i < 10
+        produce i
+    produce final "hi"
+\end{lstlisting}
+
+We are not aware of any language that provides a symmetric construction for creating consumers. Dreaming up a symmetric design is straightfoward initially:
+
+\begin{lstlisting}[language=Python]
+consumer
+    x = consume
+    y = consume
+until consume final z
+    doSomething(x + y + z)
+\end{lstlisting}
+
+This design does leave open some questions: what if the \texttt{consume} function of the created consumer is called more often then there are \texttt{consume} keywords in the main consumer body? Should the main consumer body be automatically wrapped in a loop to prevent this situation? Should it always be valid to jump to the \texttt{until consume final} block, or only at the end of the main consumer body? How should the created consumer indicate violation of the resulting usage contract? We do not have immediate answers, we simply want to point out that --- after extrapolating the logic that leads to our API designs --- designing generators into languages without a corresponding consumer equivalent feels questionable.
+
+A particular usecase we want to highlight for explicit (asynchronous) \texttt{consumer} syntax is that of implementing asynchronous decoders or parsers. Typically this involves writing a state-machine or otherwise putting a lot of manual work into ensuring a decoder that can suspend its execution when reaching the end of input and then resume once more input becomes available. The \texttt{consumer} syntax allows writing asynchronous decoders that look just like synchronous ones.
+
+Assuming the open questions around dedicated \texttt{consumer} syntax have been solved, the next logical step is to combine the \texttt{consumer} and \texttt{producer} keywords into a more powerful \texttt{conducer} language construct. Here we sketch a decoder conducer for 16-bit integers from 8-bit integers, and an encoder conducer for 16-bit integers into 8-bit integers (any real language should allow eliding the trivial \texttt{until consume final} blocks):
+
+\begin{lstlisting}[language=Python]
+# Decoder
+conducer
+    msb = consume
+    lsb = consume
+    produce msb * 256 + lsb
+until consume final z
+    produce final z
+
+# Encoder
+conducer
+    x = consume
+    produce x / 256
+    produce x % 256
+until consume final z
+    produce final z
+\end{lstlisting}
+
+Finally, we want to draw a parallel to coroutines\cite{moura2009revisiting}, as implemented, for example, in Lua\cite{ierusalimschy2006programming}. In (this particular brand of) coroutines, the \texttt{yield} expression in the coroutine implementation not only yields a value to the outsde world, but it also evaluates to a value that is given as part of the expression that resumes the coroutine. We can see our conducer syntax as a generalization of this pattern. Coroutines tie incoming and outgoing communication to the same points in the coroutine, marked by \texttt{yield}. Our syntax allows arbitrarily splitting the communication. By extension, conducers naturally generalize coroutines.
 
 \subsection{Bulk Processing}\label{bulk}
 
