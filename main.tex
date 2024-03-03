@@ -303,23 +303,44 @@ API FallibleProducer<P, I, F, E>
 
 But interesting to consider that the \texttt{FallibleProducer} API appears asymmetric to the \texttt{FallibleConsumer} API without the context of errors-as-effects, as it does not mirror the communication flow of the consumer by having functions that take $E$s as arguments. The return type of \texttt{produce} also appears to violate minimality, as $E$ and $F$ could be combined into a single type parameter in principle. This invalidates our earlier criticism of the Swift-derived \texttt{FallibleIterator} API of \cref{evaluating_others}: a return type of \texttt{I | () | E} correctly separates the final item (hardcoded to type \texttt{()} in the Swift case) from the error effect of type $E$.
 
-It took a few pages, but now we have a more nuanced view by which to understand the API designs encountered in the wild. This deeper understanding and hopefully serve to guide future API designs that otherwise would have to rely in gut-feeling and copying older designs.
+It took a few pages, but now we have a more nuanced view by which to understand the API designs encountered in the wild. This deeper understanding can hopefully serve to guide future API designs that otherwise would have to rely on gut-feeling and copying older designs.
 
 We will continue our investigation with the \texttt{Producer} and \texttt{Consumer} APIs as they are, it is up to the reader to decide whether their functions should be fallible (and/or asynchronous, for that matter), or not.
 
-\section{Working With Producers and consumers}
+\section{Working With Producers and Consumers}
 
+Having settled on designs for \texttt{Producer} and \texttt{Consumer} APIs, we now turn to the can or should should be used in practice. We note a powerful pattern composability in \cref{conducer}, muse about language-level support in \cref{syntax}, before turning to matters of efficiency in \cref{bulk}.
 
+\subsection{Conducers}\label{conducer}
 
-\subsection{Conducers}
+In \cref{evaluating_ours}, we briefly considered an in-memory queue: a pair of a consumer and a producer such that the producer emits exactly the item consumed by the consumer. We can consider such a pair as a single value that implements both the \texttt{Consumer} and the \texttt{Producer} API; we shall call such a value a \textit{conducer} (portmanteau of \textit{con}sumer and pro\textit{ducer}).
 
-conducer (aka super-coroutine, Inum, generalized anti-pipe); queue, map, encoders and decoders.
+We posit that conducers make an appealing foundation for constructing and composing producers and consumers. We base this on the fact that you can use a single conducer definition to both obtain a new producer from a producer or a new consumer from a consumer. Consider the queue conducer: composing a producer with the conducer yields a new producer that buffers some number of items before emitting them. Composing the conducer with a consumer yields a new consumer that buffers some number of items before consuming them in the inner consumer.
 
-\subsection{Language-Level Consequences}\label{syntax}\label{conducer}
+This dual-purpose usage constitutes a tangible advantage of being hellbent on symmetry. As a second example, consider a conducer constructed from some function of type $S \rightarrow T$ that is a consumer for items of type $S$ and a producer for items of type $T$. This \textit{map} conducer can both adapt the items emitted by a producer, or adapt the items accepted by a consumer. Contrast this with designs that have to provide individual map adaptors for both producers and consumers.
+
+Conducers need not preserve a one-to-one mapping between consumed items and produced items. The common tasks of encoding and decoding the values for transoprt can be captured elegantly by conducers: a \textit{decoder} consumes items of some type $S$ (often, $S$ would be the type of bytes) and occasionally produces an item of some type $T$ (or an error value), an \textit{encoder} consumes items of some type $T$ and produces many items of some type $S$.
+
+Conducers eliminate the need to duplicate implementation efforts for producer adapters and consumer adapters. With a sufficient degree of symmetry but without an explicit concept of conducers, library authors might be tempted to avoid duplicated efforts by keeping one of the two abstractions --- typically the consumers --- deliberately plain and devoid of combinators, while offering a rich set of combinators for the other abstraction. Conducers offer an alternative to this asymmetric and ultimately completely arbitrary distinction: both producers \textit{and} consumers should be kept plain; rich combinators should be reserved for conducers.
+
+Note that conducers compose nicely amongst themselves, you can chain conducers to create arbitrarily complex processing pipelines. Plugging these pipelines between two leaf producers and consumers, say ones that provide read access and write access to a tcp connection, is a comparatively boring and inconsequential formality.
+
+As a final thought, we want to mention that you can view conducers as an overarching abstraction for both producers and consumers:
+
+\begin{lstlisting}[language=Python]
+API Conducer<C, I1, F1, I2, F2>
+    consume: (I1, C) -> C
+    close: (F1, C) -> ()
+    produce: P -> (I2, P) | F2
+\end{lstlisting}
+
+Setting \texttt{I1} and \texttt{F1} to $!$ yields an abstraction isomorphic to \texttt{Producer}, and setting \texttt{I2} and \texttt{F2} to $!$ yields an abstraction isomorphic to \texttt{Consumer}. We leave to the reader whether this constitutes an inconsequential triviality or an alternate lens through which our whole subject should be considered.
+
+\subsection{Language-Level Consequences}\label{syntax}
 
 pro and con as specialiazations of conducers, and alternatives to generators and for loops respectively.
 
-\subsection{Bulk Processing}
+\subsection{Bulk Processing}\label{bulk}
 
 Buffered.
 
