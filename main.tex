@@ -50,7 +50,7 @@ Equipped with a vague notion of wanting to ``lazily consume or produce sequences
 
 For example, a mathematician might want to work with numbers ``with no gaps in-between'' (i.e., the real numbers). They might formalize this intuitive notion as a minimal, infinite, complete ordered field. Any candidate construction (say, the Dedekind cuts of rational numbers), can now be objectively measured against the requirements. As an added bonus, it turns out that all constructions satisfying the abstract requirements are isomorphic. Some constructions might be more convenient than others in certain settings, but ultimately, they are all interchangeable.
 
-This approach of construction-independent axiomization is the only way we can conceive to clear the proliferation of competing library designs.
+This approach of construction-independent axiomization is the only way we can conceive to bring clarity to the proliferation of competing library designs.
 
 Sadly, we could not find an airtight mathematical formalism to capture our problem space. The criteria we now present leave gaps that must be filled by argumentation rather than proof, the API design still remains part art as much as science. This makes the following paragraphs the weakest link of this paper. We nevertheless think that both our approach and the designs it yields are novel --- and useful.
 
@@ -278,31 +278,40 @@ We shall not dwell on this subtlety any further, because it does not affect our 
 
 \subsection{Communication Flow}\label{communication_flow}
 
-At this point, we claim to have found APIs that satisfy exactly what we set out to achieve: symmetric consumption and production of $\omega$-regular sequences with a minimal interface. Unfortunately, there is still a problem: if we were to use the consumer API to write data to a network, the API would be unable to report any failures. More generally speaking, code interacting with a \textit{producer} can obtain information \textit{from} the producer but cannot pass any information \textit{to} the producer; conversely, code interacting with a \textit{consumer} can pass information \textit{to} the consumer but cannot obtain any information \textit{from} the consumer.
+As already mentioned, our proposed \texttt{Consumer} API has no way of emitting errors to its calling code, a design decision that appears to make it unsuitable for network programming, for example. More generally speaking, code interacting with a \textit{consumer} can pass information \textit{to} the consumer but cannot obtain any information \textit{from} the consumer; and conversely, code interacting with a \textit{producer} can obtain information \textit{from} the producer but cannot pass any information \textit{to} the producer.
 
-This rigorous a restriction on communication flows evokes design choices such as the unidirectional communication primitives of security-focussed micro-kernels such as seL4~\cite{murray2013sel4}, so there clearly is a place for such constrained APIs. But the consumer API is too constrained for network programming.
+This rigorous a restriction on communication flows evokes design choices such as the unidirectional communication primitives of security-focussed micro-kernels like seL4~\cite{murray2013sel4}, so there clearly is a place for such constrained APIs. But the consumer API does not seem appropriate as a general-purpose API.
 
+Trying to add the missing communication flows raises some interesting questions. Should \texttt{consumer} return the next consumer \textit{and} another piece of information, or the next consumer \textit{or} another piece of information? What about \texttt{close} --- should it be able to return extra information, or not? How should symmetry be preserved --- does the \texttt{Producer} API require a \texttt{stop} function that lets the surrounding code communicate that (and why) \texttt{produce} will no longer be called? Should \texttt{produce} itself take a piece of information as input?
 
+Our fairly principled approach of aiming for  minimal, symmetric, regular-languagy APIs provides no guidance here, as these communication flows are not part of the underlying problems. Any choices we need to make are essentially arbitrary.
 
-To allow for the consumer to communicate back to the code that uses it, we add a new 
+We see two ways out of this problem. The simplemost solution is acceptance. When a programmer wishes to write data to a network through a consumer interface, they need a corresponding producer to emit any feedback such as connection failures. Considering that typical networking APIs use the same error type for reading and writing data, this doesn't seem too far-fetched. Then again, the difficulties in migrating from more typical APIs to this style of error handling are hard to estimate. An argumentative essay like this one cannot conclusively establish a result, we merely want to raise that accepting a consumer API without error reporting might be more feasible than it appears at first glance.
 
+The other solution is to consider fallibility as an \textit{effect}. Just like the functions we use in our APIs might be asynchronous, the might also be fallible. Different programming languages represent the different ways: some could use exceptions, others could consistently use a \texttt{Result} type (a sum type of either the actual value of interest or an error value) --- the latter is a simple and classic example of monadic effect handling. We can keep using the same notation as before, but consider every function as possibly fallible.
 
-
-
+To make explicit the transformation from our APIs to fallible versions, here is what the results look like errors of type $E$, when neither relying of exceptions nor on explicitly abstracting over effects via monads:
 
 \begin{lstlisting}[language=Python]
-API ConsumerAttempt<C, I, F, S>
-    consume: (I, C) -> C | S
-    close: (F, C) -> () | S
+API FallibleConsumer<C, I, F, E>
+    consume: (I, C) -> C | E
+    close: (F, C) -> () | E
+
+API FallibleProducer<P, I, F, E>
+    produce: P -> (I, P) | F | E
 \end{lstlisting}
-    
-\begin{lstlisting}[language=Python]
-API Producer<P, I, F, S>
-    produce: P -> (I, P) | F
-    stop: (P, S) -> ()
-\end{lstlisting}
+
+But interesting to consider that the \texttt{FallibleProducer} API appears asymmetric to the \texttt{FallibleConsumer} API without the context of errors-as-effects, as it does not mirror the communication flow of the consumer by having functions that take $E$s as arguments. The return type of \texttt{produce} also appears to violate minimality, as $E$ and $F$ could be combined into a single type parameter in principle. This invalidates our earlier criticism of the Swift-derived \texttt{FallibleIterator} API of \cref{evaluating_others}: a return type of \texttt{I | () | E} correctly separates the final item (hardcoded to type \texttt{()} in the Swift case) from the error effect of type $E$.
+
+It took a few pages, but now we have a more nuanced view by which to understand the API designs encountered in the wild. This deeper understanding and hopefully serve to guide future API designs that otherwise would have to rely in gut-feeling and copying older designs.
+
+We will continue our investigation with the \texttt{Producer} and \texttt{Consumer} APIs as they are, it is up to the reader to decide whether their functions should be fallible (and/or asynchronous, for that matter), or not.
 
 \section{Working With Producers and consumers}
+
+
+
+\subsection{Conducers}
 
 conducer (aka super-coroutine, Inum, generalized anti-pipe); queue, map, encoders and decoders.
 
@@ -318,7 +327,7 @@ Slices. (should be strict subtypes)
 
 mention vectored io?
 
-\section{Beyond the Basics}\label{fun}
+\section{Onward!}\label{fun}
 
 Combinators.
 
