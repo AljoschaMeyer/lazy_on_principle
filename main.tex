@@ -150,8 +150,6 @@ Another school of APIs defines asynchronous producers in terms of all the ways i
 
 The story for asynchronous \textit{consumers} is usually highly asymmetrical again. Swift, for example, has asynchronous for loops to consume streams. Rust offers a \textit{sink} abstraction\footnote{\url{https://docs.rs/futures/0.3.30/futures/sink/trait.Sink.html}} as the opposite of a stream, but the designs are highly asymmetric --- the sink abstraction requires four functions to the stream abstraction's one function.
 
-% Lack of symmetry in asynchronous sequence APIs is especially surprising, since the typical motivating examples for asynchronous sequences come in pairs: you want to receive data \textit{from} the network \textit{and} write data \textit{to} the network. Unfortunately, APIs for transferring bytes over the network usually deal in \textit{arrays of bytes} and get their own specialized abstractions. A typical example of such \textit{readers} (producers of many bytes simultaneously) and \textit{writers} (consumers of many bytes simultaneously) are the \texttt{Reader}\footnote{\url{https://pkg.go.dev/io\#Reader}} and \texttt{Writer}\footnote{\url{https://pkg.go.dev/io\#Writer}} of the Go language.
-
 % Universality and specialization to obtain iterators.
 
 
@@ -313,34 +311,48 @@ Having settled on designs for \texttt{Producer} and \texttt{Consumer} APIs, we n
 
 \subsection{Conducers}\label{conducer}
 
-In \cref{evaluating_ours}, we briefly considered an in-memory queue: a pair of a consumer and a producer such that the producer emits exactly the item consumed by the consumer. We can consider such a pair as a single value that implements both the \texttt{Consumer} and the \texttt{Producer} API; we shall call such a value a \textit{conducer} (portmanteau of \textit{con}sumer and pro\textit{ducer}).
+In \cref{evaluating_ours}, we briefly considered an in-memory queue: a pair of a consumer and a producer such that the producer emits exactly the item consumed by the consumer. We can consider such a pair as a single value that implements both the \texttt{Consumer} and the \texttt{Producer} API; we shall call such a value a \textit{naïve conducer} (portmanteau of \textit{con}sumer and pro\textit{ducer}). The \textit{naïveté} will become apparent once we go from intuitive notions of composability to actual implementation; for now we ask you to suspend some disbelieve and let the concept guide us to the more useful, \textit{actual} conducers.
 
-We posit that conducers make an appealing foundation for constructing and composing producers and consumers. We base this on the fact that you can use a single conducer definition to both obtain a new producer from a producer or a new consumer from a consumer. Consider the queue conducer: composing a producer with the conducer yields a new producer that buffers some number of items before emitting them. Composing the conducer with a consumer yields a new consumer that buffers some number of items before consuming them in the inner consumer.
+Naïve conducers make an appealing foundation for constructing and composing producers and consumers. You can use a single naïve conducer definition to both obtain a new producer from a producer or a new consumer from a consumer. Consider the naïve queue conducer: composing a producer with the naïve conducer yields a new producer that buffers some number of items before emitting them. Composing the naïve conducer with a consumer yields a new consumer that buffers some number of items before consuming them in the inner consumer.
 
-This dual-purpose usage constitutes a tangible advantage of being hellbent on symmetry. As a second example, consider a conducer constructed from some function of type $S \rightarrow T$ that is a consumer for items of type $S$ and a producer for items of type $T$. This \textit{map} conducer can both adapt the items emitted by a producer, or adapt the items accepted by a consumer. Contrast this with designs that have to provide individual map adaptors for both producers and consumers.
+This dual-purpose usage constitutes a tangible advantage of being hellbent on symmetry. As a second example, consider a naïve conducer constructed from some function of type $S \rightarrow T$ that is a consumer for items of type $S$ and a producer for items of type $T$. This naïve \textit{map} conducer can both adapt the items emitted by a producer, or adapt the items accepted by a consumer.% Contrast this with designs that have to provide individual map adaptors for both producers and consumers.
 
-Conducers need not preserve a one-to-one mapping between consumed items and produced items. The common tasks of encoding and decoding the values for transoprt can be captured elegantly by conducers: a \textit{decoder} consumes items of some type $S$ (often, $S$ would be the type of bytes) and occasionally produces an item of some type $T$ (or an error value), an \textit{encoder} consumes items of some type $T$ and produces many items of some type $S$.
+Naïve conducers need not preserve a one-to-one mapping between consumed items and produced items. The common tasks of encoding and decoding values for transoprt can be captured elegantly by naïve conducers: a \textit{decoder} consumes items of some type $S$ (often, $S$ would be the type of bytes) and occasionally produces an item of some type $T$, an \textit{encoder} consumes items of some type $T$ and produces many items of some type $S$.
 
-Conducers eliminate the need to duplicate implementation efforts for producer adapters and consumer adapters. With a sufficient degree of symmetry but without an explicit concept of conducers, library authors might be tempted to avoid duplicated efforts by keeping one of the two abstractions --- typically the consumers --- deliberately plain and devoid of combinators, while offering a rich set of combinators for the other abstraction. Conducers offer an alternative to this asymmetric and ultimately completely arbitrary distinction: both producers \textit{and} consumers should be kept plain; rich combinators should be reserved for conducers.
+Unfortunately, none of this actually works. In order to, for example, compose a naïve conducer in front of a consumer, the \textit{consume} function of the resulting consumer would have to first call the \textit{consume} function of the naïve conducer. Then, it would need to correctly guess how many times to call the naïve conducer's \textit{produce} function, in order to feed the results to the inner consumer. A general-purpose composition routine can neither know how many items the inner consumer expects, nor how many items the naïve conducer can produce at any point in time.
 
-Note that conducers compose nicely amongst themselves, you can chain conducers to create arbitrarily complex processing pipelines. Plugging these pipelines between two leaf producers and consumers, say ones that provide read access and write access to a tcp connection, is a comparatively boring and inconsequential formality.
+One obvious solution is to explicitly manage metadata about which functions can and should be called at runtime, but this creates computational overhead. Another simple solution is to restrict naïve conducer to producing exactly one item per item they consume, but this severely restricts expressivity.
 
-As a final thought, we want to mention that you can view conducers as an overarching abstraction for both producers and consumers:
+Toward a zero-overhead, expressive solution, we temporarily abandon the dual-usage intuition behind naïve conducers, and examine consumers and producers separately. We define a \textit{consumer adapter} as a function that maps an arbitrary consumer to another consumer, and a \textit{producer adapter} as a function that maps an arbitrary producer to another producer.
 
-\begin{lstlisting}[language=Python]
-API Conducer<C, I1, F1, I2, F2>
-    consume: (I1, C) -> C
-    close: (F1, C) -> ()
-    produce: P -> (I2, P) | F2
-\end{lstlisting}
+These adapters can implement the same functionality as naïve conducers in a way that actually works. Consider, for example, a consumer adapter for encoding items of type $S$ to many items of type $T$. The consumer adapter can produce a consumer that consumes an item of type $S$, computes the encoding, and calls the \textit{consume} function of the inner consumer once for each $T$ of the encoding. The corresponding producer adapter, when asked to produce a value of type $T$, asks the wrapped producer for value of type $S$, and computes the encoding. It then returns the first $T$ of the encoding and buffers the remaining encoding, to be admitted on subsequent calls to \textit{produce}. Only when the buffer has become empty does it request another item from the wrapped producer.
 
-Setting \texttt{I1} and \texttt{F1} to $!$ yields an abstraction isomorphic to \texttt{Producer}, and setting \texttt{I2} and \texttt{F2} to $!$ yields an abstraction isomorphic to \texttt{Consumer}. We leave to the reader whether this constitutes an inconsequential triviality or an alternate lens through which our whole subject should be considered.
+There is a large amount of overlap or symmetry between the encoding consumer adapter and the encoding producer adapter, note how both use the same procedure for the actual encoding, and both need to buffer the result in between subsequent calls to the wrapped consumer producer. We call a pair consumer and producer adapters that implements a naïve conducer an (actual) \textit{conducer}.
 
-\subsection{Language-Level Consequences}\label{syntax}
+While such conducers are an interesting tool to reason about working with lazy sequences, they do not provide an immediate software engineering benefit: the two adapters need to be implemented independently. In the spirit of full symmetry, we now have to duplicate all implementation efforts.
+
+To improve on this, we next take a look at how programming language syntax (or macros) to make it possible to write a single definition that then yields both adapters of a conducer. To do so, we first need to investigate dedicated syntax for producers and consumers separately.
+
+% Note that naïve conducers compose nicely amongst themselves, you can chain naïve conducers to create arbitrarily complex processing pipelines. Plugging these pipelines between two leaf producers and consumers, say ones that provide read access and write access to a tcp connection, is a comparatively boring and inconsequential formality.
+
+% Conducers eliminate the need to duplicate implementation efforts for producer adapters and consumer adapters. With a sufficient degree of symmetry but without an explicit concept of conducers, library authors might be tempted to avoid duplicated efforts by keeping one of the two abstractions --- typically the consumers --- deliberately plain and devoid of combinators, while offering a rich set of combinators for the other abstraction. Conducers offer an alternative to this asymmetric and ultimately completely arbitrary distinction: both producers \textit{and} consumers should be kept plain; rich combinators should be reserved for conducers.
+
+% As a final thought, we want to mention that you can view conducers as an overarching abstraction for both producers and consumers:
+
+% \begin{lstlisting}[language=Python]
+% API Conducer<C, I1, F1, I2, F2>
+%     consume: (I1, C) -> C
+%     close: (F1, C) -> ()
+%     produce: P -> (I2, P) | F2
+% \end{lstlisting}
+
+% Setting \texttt{I1} and \texttt{F1} to $!$ yields an abstraction isomorphic to \texttt{Producer}, and setting \texttt{I2} and \texttt{F2} to $!$ yields an abstraction isomorphic to \texttt{Consumer}. We leave to the reader whether this constitutes an inconsequential triviality or an alternate lens through which our whole subject should be considered.
+
+\subsection{Syntax Considerations}\label{syntax}
 
 Many programming languages offer generator syntax for creating iterators, and for loops for consuming iterators. A language designed with our APIs in mind could provide more powerful syntax.
 
-Generators\footnote{\url{https://peps.python.org/pep-0255/}} provide dedicated syntax for creating producers, with \texttt{yield} emitting repeated items and \texttt{return} emitting the final value. As an example, the following pseudo-code emits the numbers from zero to nine and then the final string ``hi''. we use atypical choices of keywords (\texttt{producer} instead of \texttt{generator}, \texttt{produce} instead of \texttt{yield}, and \texttt{produce final} instead of \texttt{return}) to be obnoxiously explicit about the ntended semantics, and to prepare for a symmtric consumer design:
+Generators\footnote{\url{https://peps.python.org/pep-0255/}} provide dedicated syntax for creating producers, with \texttt{yield} emitting repeated items and \texttt{return} emitting the final value. As an example, the following pseudo-code emits the numbers from zero to nine and then the final string ``hi''. We use atypical choices of keywords (\texttt{producer} instead of \texttt{generator}, \texttt{produce} instead of \texttt{yield}, and \texttt{produce final} instead of \texttt{return}) to be obnoxiously explicit about the intended semantics, and to prepare for a symmtric consumer design:
 
 \begin{lstlisting}[language=Python]
 producer
@@ -360,35 +372,109 @@ until consume final z
     doSomething(x + y + z)
 \end{lstlisting}
 
-This design does leave open some questions: what if the \texttt{consume} function of the created consumer is called more often then there are \texttt{consume} keywords in the main consumer body? Should the main consumer body be automatically wrapped in a loop to prevent this situation? Should it always be valid to jump to the \texttt{until consume final} block, or only at the end of the main consumer body? How should the created consumer indicate violation of the resulting usage contract? We do not have immediate answers, we simply want to point out that --- after extrapolating the logic that leads to our API designs --- designing generators into languages without a corresponding consumer equivalent feels questionable.
+This design does leave open some questions: what if the \texttt{consume} function of the created consumer is called more often then there are \texttt{consume} keywords in the main consumer body? And should it always be valid to jump to the \texttt{until consume final} block, or only at the end of the main consumer body?
 
-A particular usecase we want to highlight for explicit (asynchronous) \texttt{consumer} syntax is that of implementing asynchronous decoders or parsers. Typically this involves writing a state-machine or otherwise putting a lot of manual work into ensuring a decoder that can suspend its execution when reaching the end of input and then resume once more input becomes available. The \texttt{consumer} syntax allows writing asynchronous decoders that look just like synchronous ones.
+Since the basic consumer design allows no communication to the calling code, a simple solution to the problem of too many \textit{consume} calls is to implicitly wrap the main consumer body in a loop. In a setting with fallible consumers, a consumer that wants to limit the number of possible calls to \textit{consume} can simply add an extra \texttt{consume} expression and throw from there:
 
-Assuming the open questions around dedicated \texttt{consumer} syntax have been solved, the next logical step is to combine the \texttt{consumer} and \texttt{producer} keywords into a more powerful \texttt{conducer} language construct. Here we sketch a decoder conducer for 16-bit integers from 8-bit integers, and an encoder conducer for 16-bit integers into 8-bit integers (any real language should allow eliding the trivial \texttt{until consume final} blocks):
+\begin{lstlisting}[language=Python]
+consumer
+    x = consume
+    y = consume
+    _ = consume
+    throw "too much information"
+until consume final z
+    doSomething(x + y + z)
+\end{lstlisting}
+
+To allow for control about what to do when \textit{close} is called depending on the current state of the consumer, the naive \texttt{until consume final} can be replaced with a mechanism that mimics \texttt{try-catch} blocks:
+
+\begin{lstlisting}[language=Python]
+consumer
+    consumeblock
+        x = consume
+    until _
+        throw "too little information"
+    consumeblock
+        y = consume
+    until z
+        doSomething(x + y + z)
+    consumeblock
+        _ = consume
+    until _
+        throw "too much information"
+\end{lstlisting}
+
+The syntax is deliberately painful: we do not claim that these are the best design choices, we merely want to demonstrate that providing a meaningful and useful consumer syntax is indeed possible. And after extrapolating the logic that leads to our API designs --- designing generators into languages without a corresponding consumer equivalent feels questionable.
+
+A particular usecase we want to highlight for explicit (asynchronous) \texttt{consumer} syntax is that of implementing asynchronous parsers. Typically this involves writing a state-machine or otherwise putting a lot of manual work into ensuring a parser that can suspend its execution when reaching the end of input and then resume once more input becomes available. The \texttt{consumer} syntax allows writing asynchronous parsers that look just like synchronous ones.
+
+Assuming the questions around dedicated \texttt{consumer} syntax have been solved, the next logical step is to combine the \texttt{consumer} and \texttt{producer} keywords into a more powerful \texttt{conducer} language construct. Here we sketch a decoder conducer for 16-bit integers from 8-bit integers, and an encoder conducer for 16-bit integers into 8-bit integers (assuming an implicit loop around everything):
 
 \begin{lstlisting}[language=Python]
 # Decoder
 conducer
-    msb = consume
-    lsb = consume
-    produce msb * 256 + lsb
-until consume final z
-    produce final z
+    consumeblock
+        msb = consume
+        lsb = consume
+        produce msb * 256 + lsb
+    until f
+        produce final f
 
 # Encoder
 conducer
     x = consume
     produce x / 256
     produce x % 256
-until consume final z
-    produce final z
+until f
+    produce final f
 \end{lstlisting}
 
-Finally, we want to draw a parallel to coroutines\cite{moura2009revisiting}, as implemented, for example, in Lua\cite{ierusalimschy2006programming}. In (this particular brand of) coroutines, the \texttt{yield} expression in the coroutine implementation not only yields a value to the outsde world, but it also evaluates to a value that is given as part of the expression that resumes the coroutine. We can see our conducer syntax as a generalization of this pattern. Coroutines tie incoming and outgoing communication to the same points in the coroutine, marked by \texttt{yield}. Our syntax allows arbitrarily splitting the communication. By extension, conducers naturally generalize coroutines.
+Finally, we want to draw a parallel to coroutines\cite{moura2009revisiting}, as implemented, for example, in Lua\cite{ierusalimschy2006programming}. In (that particular brand of) coroutines, the \texttt{yield} expression in the coroutine implementation not only yields a value to the outside world, but it also evaluates to a value that is given as part of the expression that resumes the coroutine. We can see our conducer syntax as a generalization of this pattern. Coroutines tie incoming and outgoing communication to the same points in the coroutine, marked by \texttt{yield}. In fact, this is equivalent to naïve conducers restricted to maintaining a one-to-one correspondence between consumption and production. Our syntax allows arbitrarily splitting the communication. By extension, conducers naturally generalize coroutines.
 
-\subsection{Bulk Processing}\label{bulk}
+\subsection{Buffering and Bulk Processing}\label{bulk}
 
-Buffered.
+We now briefly discuss some questions of efficiency. While consumers and producers make for nice building blocks of programs because they are easy to reason about, it is inefficient to process items one by one in practice.
+
+One problem of processing items one at a time is that performing side effects is often expensive, especially when system calls are involved. Writing a file byte by byte with individual system calls is orders of magnitude slower than buffering bytes sequentially in memory and writing many bytes with a single system call.
+
+An easy solution is to allow consumers to buffer items internally, leaving them the freedom to arbitrarily delay actual processing indefinitely to optimize for efficiency. When writing to a consumer in order to perform side-effects, the programmer needs a way to force the consumer to stop delaying, \textit{flush} its buffer, and actually trigger the effects:
+
+\begin{lstlisting}[language=Python]
+API BufferedConsumer<C, I, F>
+    consume: (I, C) -> C
+    flush: C -> C
+    close: (F, C) -> ()
+\end{lstlisting}
+
+The buffered consumer with a \texttt{flush} function is a staple of real-world APIs. The analogous functionality for producers, however, is one we have never encountered. The opposite of \textit{flushing} as much data as possible \textit{out of} a buffer is \textit{slurping} as much data as possible \textit{into} a buffer.
+
+\begin{lstlisting}[language=Python]
+API BufferedProducer<P, I, F>
+    produce: P -> (I, P) | F
+    slurp: P -> P
+\end{lstlisting}
+
+Unlike flushing consumers, slurping producers does not immediately serve to trigger effectful production of items. Still, there are arguments in favor of a slurp function on producers that go beyond the consistency gains of maintaining symmetry (although, to be clear, those alone would already suffice in our opinion). Consider a producer that emits items from some effectful source which might stop working at any moment (i.e., a network connection). Slurping allows the programmer to pre-fetch data even though processing the available data might be time-consuming and not yet finished.
+
+System calls are not the only reason for processing data in bulk. Simply copying consecutive bytes in memory from one location to another is significantly more efficient than copying each byte individually. Hence, many programming languages offer APIs for producing or consuming many items at a time by way of \textit{slices} (a pointer paired with the number of items stored consecutively in memory starting at the pointed-to address).
+
+A typical example of such \textit{readers} (producers of many bytes simultaneously) and \textit{writers} (consumers of many bytes simultaneously) are the \texttt{Reader}\footnote{\url{https://pkg.go.dev/io\#Reader}} and \texttt{Writer}\footnote{\url{https://pkg.go.dev/io\#Writer}} abstractions of the Go language. To translate them into psedo-types, we write \texttt{\&r[T]} for a slice of values of type \texttt{T} that may be read but not written, and \texttt{\&w[T]} for a slice of values of type \texttt{T} that may be written but not read. The Go APIs then translate to the following:
+
+\begin{lstlisting}[language=Python]
+API Reader<R, I, E>
+    read: (R, &w[I]) -> (R, int) | E
+
+API Writer<W, I, E>
+    write: (W, &r[I]) -> (W, int) | E
+\end{lstlisting}
+
+The \texttt{read} function \textit{writes} (produces) some number of items into a slice, and returns how many items were written. The \texttt{write} function \textit{reads} (consumes) some number of items from a slice, and returns how many items were read. Setting aside the \textit{interesting} naming choices and the fact that most langages unnecessarily specialize the item type to bytes, these APIs display a perfect symmetry that APIs for operating on individual items usually lack.
+
+why restrict slice access? piping and composing without allocations. derive semantics by way of specializing producer/consumer.
+
+% Lack of symmetry in asynchronous sequence APIs is especially surprising, since the typical motivating examples for asynchronous sequences come in pairs: you want to receive data \textit{from} the network \textit{and} write data \textit{to} the network. Unfortunately, APIs for transferring bytes over the network usually deal in \textit{arrays of bytes} and get their own specialized abstractions. A typical example of such \textit{readers} (producers of many bytes simultaneously) and \textit{writers} (consumers of many bytes simultaneously) are the \texttt{Reader}\footnote{\url{https://pkg.go.dev/io\#Reader}} and \texttt{Writer}\footnote{\url{https://pkg.go.dev/io\#Writer}} of the Go language.
+
+
 
 Slices. (should be strict subtypes)
 
@@ -404,9 +490,10 @@ Asynchrony.
 
 Trees. DAGs? Digraphs?
 
-Coroutines/generators generalized.
+Coroutines/generators generalized. Expressiveness?
 
 Turing machines.
+Seeking, and ``everything is a file''
 
 Elastic Turing machines.
 
