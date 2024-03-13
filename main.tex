@@ -7,7 +7,7 @@
 \input{libs.tex}
 \usepackage{macros}
 
-\title{Lazy on Principle}
+\title{Strict Principles for Lazy Sequences}
 % \title{Principled Lazy Sequences}
 
 \author{Aljoscha Meyer}
@@ -90,21 +90,6 @@ By generalizing the strict case to the lazy case, we can make our requirement of
 
 TODO
 
-\section{Related Work}\label{related_work}
-
-TODO
-
-Iterees: 
-\url{https://link.springer.com/chapter/10.1007/978-3-642-29822-6_15}
-\url{https://hackage.haskell.org/package/iterIO-0.2.2/docs/Data-IterIO.html}
-
-session types
-
-pull-stream paper
-
-\url{http://jiangxi.cs.uwm.edu/publication/rebls2020.pdf}
-
-\url{https://arxiv.org/pdf/1612.06668.pdf} (good related work)
 
 \section{Evaluating Abstractions}\label{evaluating_others}
 
@@ -498,53 +483,33 @@ Given such \textit{bulk\_produce} and \textit{bulk\_consume} functions, there ar
 
 A final, interesting observation on this topic concerns memory safety. In a language with a concept of uninitialized memory that is acceptable to write to but not to read from, a bulk consumer is free to expose a (write-only) slice of uninitialized memory in its \textit{consumer\_slots} function. Whenever \textit{process\_consumed} is called thereafter, the consumer can assume that the memory has been initialized. If the calling code is faulty, this can lead to undefined behavior, making the \textit{process\_consumed} function \textit{unsafe} in the Rust sense of the word, i.e., it can trigger undefined behavior when its contract is not fulfilled. There is no such problem with the bulk producer API. Thankfully, the \textit{bulk\_consume} helper function fully insulates from this source of errors.
 
-
-
-
-
-piping and composing without allocations. bulk conducers (and syntax)
-
-% Lack of symmetry in asynchronous sequence APIs is especially surprising, since the typical motivating examples for asynchronous sequences come in pairs: you want to receive data \textit{from} the network \textit{and} write data \textit{to} the network. Unfortunately, APIs for transferring bytes over the network usually deal in \textit{arrays of bytes} and get their own specialized abstractions. A typical example of such \textit{readers} (producers of many bytes simultaneously) and \textit{writers} (consumers of many bytes simultaneously) are the \texttt{Reader}\footnote{\url{https://pkg.go.dev/io\#Reader}} and \texttt{Writer}\footnote{\url{https://pkg.go.dev/io\#Writer}} of the Go language.
-
-
-
-mention vectored io?
-
-
-
 \section{Onward!}\label{fun}
 
-Combinators.
+This concludes our main arguments and designs. But there is still plenty of engineering and research left to be done.
 
-Conducer syntax: formal transformation into state machines or calculus terms.
+What is up with conducers? Is the introduction of dedicated syntax really the best way of deriving consumer \textit{and} producer adapters from a single specification? Is there a nicer API design that captures the same degree of composability without requiring this split? If dedicated syntax is the way to go, should there be dedicated syntax for bulk producers, bulk consumers, and bulk conducers? What would it look like? What about vectored I/O\footnote{\url{https://en.wikipedia.org/wiki/Vectored_I/O}}?
 
-bulk conducers (and syntax)
+Concerning the dedicated syntax, we took a lot of shortcuts, not least of all the absolutely horrible syntax for consumers. On the more formal side, what should be the proper --- say, denotational --- semantics of a \texttt{conducer} syntactic element be? Given such formal semantics, what is a translation of the syntax into ``normal'' syntactic components of equivalent semantics? Which ``normal'' constructs are particularly helpful --- coroutines, continuations? Can you elegantly avoid such fancy constructs altogether?
 
-Lengths and limits.
+Is the fact that conducers generalize coroutines a coincidence, or do conducers deserve study as a control-flow mechanism in their own right? Coroutines are as expressive as one-shot continuations, but strictly less expressive than general continuations~\cite{moura2009revisiting}. Where do conducers fall in this spectrum?
 
-Asynchrony.
+What is up with the symmetry between producers and consumers? Is there a general, formal setting for expressing APIs with a general, precise notion of duality, in which producers and consumers are dual in a formal sense? Did we simply not find it yet, or is this impossible? For infinite, homogeneous sequences, producers and consumers are actually dual (and correspond nicely to coalgebra and algebra respectively). Why and where exactly do things go wrong once you add dedicated final elements or effects such as irrecoverable errors?
 
-Trees. DAGs? Digraphs?
+How far can we take our unsatisfying substitutes for proper duality --- symmetry and inverse-like composition? There is plenty of literature on proving iterators correct, see~\cite{bily2022compositional} for a recent example. How much of such literature carries over to consumers, and how much has to be redeveloped from scratch? This question should serve as a powerful motivation for finding a framing in which producers and consumers are fully dual. Similar thoughts apply to optimization techniques.
 
-Coroutines/generators generalized. Expressiveness?
+Regarding more direct concerns of software engineering, which adaptors or combinators should make up the standard toolbox for composing sequence APIs? Which algebraic laws must they fulfil? What is a good technique for implementing combinators only once and then automatically deriving bulk versions? Conducers provide a good framing for unary combinators, but what about other combinators (say, a binary concatenation combinator)?
 
-Turing machines.
-Seeking, and ``everything is a file''
+Producers and consumers strictly limit the interaction with a sequence. Aside from optimization details such as functions for providing estimates of the minimum and maximum number of items that can still be processed, the most obvious extension of our APIs is that of random-access. Readers and writers originate from the Unix notion of \textit{files}, and \textit{seeking} in a file is a core concern of this perspective. What do good APIs for seeking look like? Support for infinity sequences mandates relative offsets rather than absolute indexing. Does this mean that all such generalizations amount to Turing-machine APIs with a movable read/write head? Should writing do overwrites exclusively, or is there design space for elastic bands that support insertion of new items in-between older items (as well as proper deletion)? Can and should these two modes be captured in the same API, or do they require separate abstractions? What does a lattice of (sub-) APIs look like that provides a more nuanced yet practically useful version of ``everything is a file''?
 
-Elastic Turing machines.
+Another avenue for generalization is provided by the expressive power of the APIs. Our producers and consumers correspomnd to the ($\omega$-) regular languages. Are there elegant APIs that capture the context-free languages? If you squint a lot, (sets of) producer types look quite similar to left-regular grammars --- which should not be too surprising, given the relation with regular languages. What is the formal version of ``squinting a lot''? Does it have an inverse, and which APIs do you obtain by ``unsquinting'' the grammars in Chomsky normal form?
 
-Outside movement.
+Yet another (arguably more practically relevant) generalization is from sequences to other graphs. What are appropriate APIs for consuming or producing trees? How do different traversal orders (breadth-first, depth-first, etc) factor into the API designs? What about APIs for exploring only a single path through a tree? Will there be a link between APIs for tree processing and grammars of context-free languages? How far can we take sensible APIs for traversing more complex graphs like DAGs or even arbitrary digraphs?
 
-from sequences to structured data?
+Finally, APIs with support for seeking in sequences or more complex graphs open up the question of \textit{who} performs the seeking. In a traditional file system API for seeking in and reading from a file, it is the user code that invokes the seeking. But consider instead a texteditor that feeds changes to a text buffer to some plugin. Here, the user code (i.e., the plugin) reads data again, but it does not control \textit{where} in the sequence the updates happen. The same kind of inverted seeking can happen for more complex data structures: a text editor might update a plugin about changes to a (higher-order) syntax tree, for example. We are not aware of any principled investigation into such APIs.
 
-from sequences to sets (should be easier)?
+\section{Further Reading}
 
-proper duality?
 
-Specalization, but from where? Turing machine? Supercoroutine?
-
-Optimization and Formalization of co-iterators, can research carry over? Reference Compositional Reasoning for Side-effectful
-Iterators and Iterator Adapters \url{https://arxiv.org/pdf/2210.09857.pdf}
 
 \url{http://www.litech.org/~jed/papers/jmatch-popl2006.pdf} Interruptible Iterators
 
@@ -564,8 +529,19 @@ frp
 
 coalgebra, coinduction, etc
 
-
 for strict sequence typing: Strongly Typed Heterogeneous Collections \url{http://softlang.uni-koblenz.de/HList/paper.pdf}
+
+Iterees: 
+\url{https://link.springer.com/chapter/10.1007/978-3-642-29822-6_15}
+\url{https://hackage.haskell.org/package/iterIO-0.2.2/docs/Data-IterIO.html}
+
+session types
+
+pull-stream paper
+
+\url{http://jiangxi.cs.uwm.edu/publication/rebls2020.pdf}
+
+\url{https://arxiv.org/pdf/1612.06668.pdf} (good related work)
 
 \section{Conclusion}\label{conclusion}
 
