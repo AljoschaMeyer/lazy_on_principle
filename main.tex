@@ -362,7 +362,7 @@ producer
     produce final "hi"
 \end{lstlisting}
 
-We are not aware of any language that provides a symmetric construction for creating consumers. Dreaming up a symmetric design is straightfoward initially:
+We are not aware of any language that provides a symmetric construction for creating consumers. Dreaming up a symmetric design initially seems straightfoward enough:
 
 \begin{lstlisting}[language=Python]
 consumer
@@ -404,46 +404,40 @@ consumer
         throw "too much information"
 \end{lstlisting}
 
-The syntax is deliberately painful: we do not claim that these are the best design choices, we merely want to demonstrate that providing a meaningful and useful consumer syntax is indeed possible. And after extrapolating the logic that leads to our API designs --- designing generators into languages without a corresponding consumer equivalent feels questionable.
+The syntax is deliberately painful: we do not claim that these are the best design choices, we merely want to demonstrate that providing a meaningful and useful consumer syntax is indeed possible. And after extrapolating the logic that leads to our API designs, designing generators into languages without a corresponding consumer equivalent feels questionable.
 
-A particular usecase we want to highlight for explicit (asynchronous) \texttt{consumer} syntax is that of implementing asynchronous parsers. Typically this involves writing a state-machine or otherwise putting a lot of manual work into ensuring a parser that can suspend its execution when reaching the end of input and then resume once more input becomes available. The \texttt{consumer} syntax allows writing asynchronous parsers that look just like synchronous ones.
+A particular usecase we want to highlight for explicit (asynchronous) \texttt{consumer} syntax is that of implementing asynchronous parsers. Typically this involves writing a state-machine or otherwise putting a lot of manual work into ensuring a parser that can suspend its execution when reaching the temporary end of input and then resume once more input becomes available. The \texttt{consumer} syntax allows writing asynchronous parsers that look just like synchronous ones.
 
-Assuming the questions around dedicated \texttt{consumer} syntax have been solved, the next logical step is to combine the \texttt{consumer} and \texttt{producer} keywords into a more powerful \texttt{conducer} language construct. Here we sketch a decoder conducer for 16-bit integers from 8-bit integers, and an encoder conducer for 16-bit integers into 8-bit integers (assuming an implicit loop around everything):
+Assuming the questions around dedicated \texttt{consumer} syntax have been solved, the next logical step is to combine the \texttt{consumer} and \texttt{producer} keywords into a more powerful \texttt{conducer} language construct. As an example, we sketch an encoder conducer for 16-bit integers into 8-bit integers:
 
 \begin{lstlisting}[language=Python]
-# Decoder
 conducer
     consumeblock
-        msb = consume
-        lsb = consume
-        produce msb * 256 + lsb
+        x = consume
+        produce x / 256
+        produce x % 256
     until f
         produce final f
-
-# Encoder
-conducer
-    x = consume
-    produce x / 256
-    produce x % 256
-until f
-    produce final f
 \end{lstlisting}
 
-Finally, we want to draw a parallel to coroutines\cite{moura2009revisiting}, as implemented, for example, in Lua\cite{ierusalimschy2006programming}. In (that particular brand of) coroutines, the \texttt{yield} expression in the coroutine implementation not only yields a value to the outside world, but it also evaluates to a value that is given as part of the expression that resumes the coroutine. We can see our conducer syntax as a generalization of this pattern. Coroutines tie incoming and outgoing communication to the same points in the coroutine, marked by \texttt{yield}. In fact, this is equivalent to naïve conducers restricted to maintaining a one-to-one correspondence between consumption and production. Our syntax allows arbitrarily splitting the communication. By extension, conducers naturally generalize coroutines.
+From such a construct, both the consumer adapter and the producer adapter can be generated. For the consumer adapter, the \texttt{consume} expressions provide the entry points to the state machine of the \textit{consume} function, and each \texttt{produce} expression translates to a \textit{consume} call of the wrapped consumer. For the producer adapter, the \texttt{produce} expressions provide the entry points to the state machine of the \textit{produce} function, and each \texttt{consume} expression translates to a \textit{produce} call of the wrapped producer.
+
+
+Finally, we want to draw a parallel to coroutines\cite{moura2009revisiting}, as implemented, for example, in Lua\cite{ierusalimschy2006programming}. In (that particular brand of) coroutines, the \texttt{yield} expression in the coroutine implementation not only yields a value to the outside world, but it also evaluates to a value that is given as part of the expression that resumes the coroutine. We can see our conducer syntax as a generalization of this pattern. Coroutines tie incoming and outgoing communication to the same points in the coroutine, marked by \texttt{yield}. In fact, this is equivalent to naïve conducers restricted to maintaining a one-to-one correspondence between consumption and production. Our syntax allows arbitrarily splitting the communication. Hence, conducers generalize coroutines.
 
 \subsection{Buffering and Bulk Processing}\label{bulk}
 
-We now briefly discuss some questions of efficiency. While consumers and producers make for nice building blocks of programs because they are easy to reason about, it is inefficient to process items one by one in practice.
+We now briefly discuss some questions of efficiency. While consumers and producers make for nice building blocks of programs because they are easy to reason about, it is inefficient in practice to process items one by one.
 
-One problem of processing items one at a time is that performing side effects is often expensive, especially when system calls are involved. Writing a file byte by byte with individual system calls is orders of magnitude slower than buffering bytes sequentially in memory and writing many bytes with a single system call.
+One problem of processing items one at a time is that performing side effects is often expensive, for example, when system calls are involved. Writing a file byte by byte with individual system calls is orders of magnitude slower than buffering bytes sequentially in memory and writing many bytes with a single system call.
 
 An easy solution is to allow consumers to buffer items internally, leaving them the freedom to arbitrarily delay actual processing indefinitely to optimize for efficiency. When writing to a consumer in order to perform side-effects, the programmer needs a way to force the consumer to stop delaying, \textit{flush} its buffer, and actually trigger the effects:
 
 \begin{lstlisting}[language=Python]
 API BufferedConsumer<C, I, F>
     consume: (I, C) -> C
-    flush: C -> C
     close: (F, C) -> ()
+    flush: C -> C
 \end{lstlisting}
 
 The buffered consumer with a \texttt{flush} function is a staple of real-world APIs. The analogous functionality for producers, however, is one we have never encountered. The opposite of \textit{flushing} as much data as possible \textit{out of} a buffer is \textit{slurping} as much data as possible \textit{into} a buffer.
@@ -458,31 +452,73 @@ Unlike flushing consumers, slurping producers does not immediately serve to trig
 
 System calls are not the only reason for processing data in bulk. Simply copying consecutive bytes in memory from one location to another is significantly more efficient than copying each byte individually. Hence, many programming languages offer APIs for producing or consuming many items at a time by way of \textit{slices} (a pointer paired with the number of items stored consecutively in memory starting at the pointed-to address).
 
-A typical example of such \textit{readers} (producers of many bytes simultaneously) and \textit{writers} (consumers of many bytes simultaneously) are the \texttt{Reader}\footnote{\url{https://pkg.go.dev/io\#Reader}} and \texttt{Writer}\footnote{\url{https://pkg.go.dev/io\#Writer}} abstractions of the Go language. To translate them into psedo-types, we write \texttt{\&r[T]} for a slice of values of type \texttt{T} that may be read but not written, and \texttt{\&w[T]} for a slice of values of type \texttt{T} that may be written but not read. The Go APIs then translate to the following:
+A typical example of such \textit{readers} (producers of many bytes simultaneously) and \textit{writers} (consumers of many bytes simultaneously) are the \texttt{Reader}\footnote{\url{https://pkg.go.dev/io\#Reader}} and \texttt{Writer}\footnote{\url{https://pkg.go.dev/io\#Writer}} abstractions of the Go language. To translate them into pseudo-types, we write \texttt{\&r[T]} for a slice of values of type \texttt{T} that may be read but not written, and \texttt{\&w[T]} for a slice of values of type \texttt{T} that may be written but not read. The Go APIs then translate to the following:
 
 \begin{lstlisting}[language=Python]
 API Reader<R, I, E>
-    read: (R, &w[I]) -> (R, int) | E
+    read: (R, &w[I]) -> (R, Nat) | E
 
 API Writer<W, I, E>
-    write: (W, &r[I]) -> (W, int) | E
+    write: (W, &r[I]) -> (W, Nat) | E
 \end{lstlisting}
 
-The \texttt{read} function \textit{writes} (produces) some number of items into a slice, and returns how many items were written. The \texttt{write} function \textit{reads} (consumes) some number of items from a slice, and returns how many items were read. Setting aside the \textit{interesting} naming choices and the fact that most langages unnecessarily specialize the item type to bytes, these APIs display a perfect symmetry that APIs for operating on individual items usually lack.
+The \texttt{read} function \textit{writes} (produces) some number of items into a slice, and returns how many items were written. The \texttt{write} function \textit{reads} (consumes) some number of items from a slice, and returns how many items were read. A return value of zero typically indicates the end of the sequence\footnote{In an synchronous setting, if no data is currently available but there might be more data in the future, the functions should block instead of returning zero. In an asynchronous setting, the functions should be parked to be resumed at a later point.}. We can easily generalize to arbitrary final values of some type $F$ by requiring the returned number to be non-zero and extending the return sum type by a third\footnote{Or a \textit{second} option, if we consider the error case as an effect.} option of type $F$.
 
-why restrict slice access? piping and composing without allocations. derive semantics by way of specializing producer/consumer.
+Setting aside the interesting naming choices and the fact that most langages unnecessarily specialize the item type to that of 8-bit integers, these APIs display a perfect symmetry that APIs for operating on individual items usually lack.
+
+It is tempting to think of readers and writers as \textit{generalizations} of producers and consumers respectively, but that viewpoint brings a problematic amount of freedom --- which parts should be generalized, and which parts should stay the same? Consider, for example, our restrictions to exclusively reading or writing from slices. This is more restrictive than allowing arbitrary access to the slices, and given the defaults of programming languages (no mainstream languages support write-only pointers), the default choice of many would be unrestricted access to the slices. The Rust community has had to put a lot of energy into  dealing with the consequences of such an oversight in its standard library\footnote{Rust allows for uninitialized memory, but \textit{reading} from unitialized memory is unsafe. See \url{https://github.com/rust-lang/rfcs/blob/master/text/2930-read-buf.md} and \url{https://blog.yoshuawuyts.com/uninit-read-write/} for details on how this affects its reader API.}.
+
+Instead, we propose to think about readers and writers as optimization details: any \textit{read} must be equivalent to a series of zero or more calls to \textit{produce}, and any \textit{write} must be equivalent to a series of zero or more calls to \textit{consume}. This viewpoint precisely defines the semantics of the reader and writer APIs, and cleanly specifies answers to questions that might otherwise be non-obvious: may \textit{read} access the contents of the slice? No. What should \textit{read} or \textit{write} do when given an empty slice? Nothing. Is every (buffered) reader or writer a (buffered) producer or consumer respectively? Absolutely.
+
+This last question is crucial: readers are subtypes of producers, and writers are subtypes of consumers. If you take away only one point from this essay, this is the one. Readers and writers stem file system abstractions, the duality of reading and writing to or from a file make their symmetry an obvious requirement. Streams and sinks trace back to iterators, which arose from traversal of (polymorphic) data structures, hence making the genericity of items an obvious requirement. If programming languages had routinely linked the two abstractions by a subtyping relation, we could have had fully symmetric, fully generic, unified APIs for decades. Instead, these abstractions have remained incomplete, and, consequently, interoperate badly.
+
+One problem with the reader and writer APIs is that they do not compose very nicely: in order to move data from a reader to a writer, you need to use allocate an array into which to first copy the data via \textit{read}, and from which to then copy the data via \textit{write}. An alternate API choice without this problem is to \textit{expose} slices of \textit{internal} buffers instead of \textit{processing} slices of \textit{external} buffers:
+
+\begin{lstlisting}[language=Python]
+API BulkProducer<P, I, F>
+    producer_slots: (P) -> &r[I] | F
+    process_produced: (P, Nat) -> P
+extends BufferedProducer<P, I, F>
+
+API BulkConsumer<C, I, F>
+    consumer_slots: (C) -> &w[I]
+    process_consumed: (P, Nat) -> P
+extends BufferedConsumer<C, I, F>
+# To close, use the BufferedConsumer
+# close function
+\end{lstlisting}
+
+The \textit{consumer\_slots} function provides a slice into an inner buffer of a \texttt{BulkConsumer}, into which the calling code can write. To trigger actual processing of the written items, the \textit{proces\_consumed} function notifies the consumer how many items were written and tasks it to consume them. The semantics of calling \textit{process\_consumed} with some argument $n$ must be those of calling \textit{consume} $n$ times, with the items written to the slice returned by \textit{consumer\_slots}. The \texttt{BulkProducer} API works analogously.
+
+Whereas a writer API requires the data to be \textit{consumed} to be in an array, the bulk consumer is required to organize its \textit{internal buffer} as an array. In practice, things are most efficient if \textit{both} sides of the exchange store data consecutively in memory, so we don't expect this shift in responsibility to make a difference to anyone who uses bulk processing for efficiency reasons anyways.
+
+Our APIs are more low-level than the traditional reader and writer APIs. The \textit{read} and \textit{write} functions --- we propose to call them \textit{bulk\_produce} and \textit{bulk\_consume} --- can easily be implemented as helper functions that take a slice and copy its contents into the slots exposed by the bulk API.
+
+Given such \textit{bulk\_produce} and \textit{bulk\_consume} functions, there are now two semantically equivalent ways of piping a bulk producer into a bulk consumer: \textit{pipe\_bulk\_consume} uses the \textit{producer\_slots} of the producer as the slice argument to \textit{bulk\_consume} on the consumer, and \textit{pipe\_bulk\_produce} uses the \textit{consumer\_slots} of the consumer as the slice argument to \textit{bulk\_produce} on the producer. Neither of these requires allocation of an external buffer to facilitate the communication.
+
+A final, interesting observation on this topic concerns memory safety. In a language with a concept of uninitialized memory that is acceptable to write to but not to read from, a bulk consumer is free to expose a (write-only) slice of uninitialized memory in its \textit{consumer\_slots} function. Whenever \textit{process\_consumed} is called thereafter, the consumer can assume that the memory has been initialized. If the calling code is faulty, this can lead to undefined behavior, making the \textit{process\_consumed} function \textit{unsafe} in the Rust sense of the word, i.e., it can trigger undefined behavior when its contract is not fulfilled. There is no such problem with the bulk producer API. Thankfully, the \textit{bulk\_consume} helper function fully insulates from this source of errors.
+
+
+
+
+
+piping and composing without allocations. bulk conducers (and syntax)
 
 % Lack of symmetry in asynchronous sequence APIs is especially surprising, since the typical motivating examples for asynchronous sequences come in pairs: you want to receive data \textit{from} the network \textit{and} write data \textit{to} the network. Unfortunately, APIs for transferring bytes over the network usually deal in \textit{arrays of bytes} and get their own specialized abstractions. A typical example of such \textit{readers} (producers of many bytes simultaneously) and \textit{writers} (consumers of many bytes simultaneously) are the \texttt{Reader}\footnote{\url{https://pkg.go.dev/io\#Reader}} and \texttt{Writer}\footnote{\url{https://pkg.go.dev/io\#Writer}} of the Go language.
 
 
 
-Slices. (should be strict subtypes)
-
 mention vectored io?
+
+
 
 \section{Onward!}\label{fun}
 
 Combinators.
+
+Conducer syntax: formal transformation into state machines or calculus terms.
+
+bulk conducers (and syntax)
 
 Lengths and limits.
 
@@ -506,6 +542,30 @@ from sequences to sets (should be easier)?
 proper duality?
 
 Specalization, but from where? Turing machine? Supercoroutine?
+
+Optimization and Formalization of co-iterators, can research carry over? Reference Compositional Reasoning for Side-effectful
+Iterators and Iterator Adapters \url{https://arxiv.org/pdf/2210.09857.pdf}
+
+\url{http://www.litech.org/~jed/papers/jmatch-popl2006.pdf} Interruptible Iterators
+
+\url{https://ora.ox.ac.uk/objects/uuid:87a8d92c-017c-4b3f-89a1-ac3056ad51d7/files/m4762057d0a14ed0f7db1ad98e560fa3f} The Essence of the Iterator Pattern
+
+Iterators: Signs of Weakness in Object-Oriented Languages \url{https://dl.acm.org/doi/pdf/10.1145/165507.165514}
+
+Design and Specification of Iterators Using the Swapping Paradigm \url{https://www.researchgate.net/profile/Bruce-Weide/publication/3187667_Design_and_Specification_of_Iterators_Using_the_Swapping_Paradigm/links/09e415117c907dd6da000000/Design-and-Specification-of-Iterators-Using-the-Swapping-Paradigm.pdf}
+
+Synthesizing Iterators from Abstraction Functions \url{https://dspace.mit.edu/bitstream/handle/1721.1/87058/Jackson_Synthesizing%20iterators.pdf?sequence=1&isAllowed=y}
+
+Segmented Iterators and Hierarchical Algorithms \url{https://lafstern.org/matt/segmented.pdf}
+
+New Iterator Concepts \url{https://svn.osgeo.org/fdo/branches/3.4/Thirdparty/boost/libs/iterator/doc/new-iter-concepts.pdf}
+
+frp
+
+coalgebra, coinduction, etc
+
+
+for strict sequence typing: Strongly Typed Heterogeneous Collections \url{http://softlang.uni-koblenz.de/HList/paper.pdf}
 
 \section{Conclusion}\label{conclusion}
 
