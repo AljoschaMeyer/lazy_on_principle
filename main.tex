@@ -1,7 +1,7 @@
 % https://2024.splashcon.org/track/splash-2024-Onward-papers#Call-for-Papers
 % 13 Pages, excluding bibliography
 
-\documentclass[sigplan,screen,10pt,anonymous,review]{acmart}
+\documentclass[sigplan,screen,10pt,review]{acmart}
 % \documentclass[11pt,conference]{IEEEtran}
 
 \input{libs.tex}
@@ -11,13 +11,19 @@
 % \title{Principled Lazy Sequences}
 
 \author{Aljoscha Meyer}
-\affiliation{TU Berlin, Germany}
+\affiliation{%
+  \institution{Technical University Berlin}
+  \city{Berlin}
+  \country{Germany}
+}
 \email{research@aljoscha-meyer.de}
 
 \begin{document}
 
 \begin{abstract}
-This is the abstract.
+Many common programming tasks, such as networking, are conceptually about lazily working with sequences of unknown length. There are plenty of APIs to choose from --- stream and sink, reader and writer, iterator and oops-missing-counterpart. But these APIs typically vary between languages or libraries. Even within a single ecosystem, there often are inconsistencies between the processing models the different APIs induce.
+
+We argue that a unified design is possible. We aim to provide a starting point for future language and library designers, as well as raise several interesting research questions that arise from taking a principled look at lazy sequences.
 \end{abstract}
 
 \maketitle
@@ -30,7 +36,7 @@ For such a fundamental, conceptually simple, and language-agnostic problem, one 
 
 But the opposite is the case. Learning a new programming language implies learning yet another, slightly (or not so slightly) different set of APIs for working with sequences. Even within a single language, there are often competing libraries --- \cref{wtfjs} lists some thirty popular Javascript libraries alone.
 
-Starting from ``\textit{Which} abstraction is the best?'', we quickly moved to ``\textit{Is} there a best abstraction?'', and then to the more constructive ``\textit{What} would make an abstraction the best?''. In this paper, we present our answers to these questions. In a nutshell:
+Starting from ``\textit{Which} abstraction is the best?'', we quickly moved to ``\textit{Is} there a best abstraction?'', and then to the more constructive ``\textit{What} would make an abstraction the best?''. In this essay, we present our answers to these questions. In a nutshell:
 
 \begin{enumerate}
     \item Abstractions for working with lazy sequences in the wild are ad-hoc designs.
@@ -40,9 +46,19 @@ Starting from ``\textit{Which} abstraction is the best?'', we quickly moved to `
     \item \sout{Everybody everywhere should use our abstractions without further reflection.}
 \end{enumerate}
 
-Note that we will focus on strictly evaluated languages. This makes explicit the design elements that enable laziness.
+We further argue that common designs are needlessly inconsistent.
 
-We further restrict our focus to the two simplemost ways of interacting with a (possibly infinite) sequence: \textit{consuming} a sequence item by item, or \textit{producing} a sequence item by item. Both modes of interaction are of great practical interest, they correspond, for example, to reading and writing bytes over a network. We do not consider more complex settings such as random access, or mixing reading and writing.
+To give a concrete example: in Rust\footnote{Rust is simply our go-to programming language. We are not aware of any mainstream language that is significantly more consistent in its APIs.}, the (de-facto standard) \texttt{Stream} API\footnote{\url{https://docs.rs/futures/0.3.30/futures/stream/trait.Stream.html}} for receiving data from an asynchronous data stream has no notion of an end-of-stream and no notion of irrecoverable errors. The corresponding synchronous \texttt{Iterator} API\footnote{\url{https://doc.rust-lang.org/std/iter/trait.Iterator.html}} has a notion of an end of items and no notion of irrecoverable errors. The synchronous \texttt{Read} API\footnote{\url{https://doc.rust-lang.org/std/io/trait.Read.html}} for receiving many items from a data source with a single function call has both a notion for an end of data availability and for irrecoverable errors; items are hardcoded to bytes, and errors are hardcoded to a general-purpose I/O error type. The asynchronous \texttt{Sink} API for processing a sequence of items\footnote{\url{https://docs.rs/futures/0.3.30/futures/sink/trait.Sink.html}} has both a notion of an end of processing (the \texttt{close} function) and a notion of irrecoverable errors. The synchronous counterpart does not exist. The synchronous \texttt{Write} API for processing many items into a sequence with a single function call\footnote{\url{https://doc.rust-lang.org/std/io/trait.Write.html}} has both a notion of closing and of irrecoverable errors.
+
+Conceptually, these APIs only deal with two issues: lazily producing or consuming a sequence. Rust has language-level mechanisms for expressing specialization of APIs and subtyping relations between APIs. Yet each of these abstractions is defined in isolation, with fundamentally different choices of expressivity that make it cumbersome or impossible to fluidly convert between them.
+
+Such a lack of consistency causes unnecessary education efforts (switching from synchronous to asynchronous sequence processing requires learning a completely different set of APIs), forces programmers to adopt inefficient code (raw bytes are not the only items for which bulk processing is more efficient than individual processing), and introduce a frustratings barrier to expressing a conceptual architecture of data flows and error handling as actual code.
+
+Hence, the abstractions we propose emphasize consistency, and they build on top of each other. This sounds boring and obvious, and it \textit{should} be boring and obvious. Alas, it apparently is not.
+
+To keep the scope manageable, we restrict our focus to the two simplemost ways of interacting with a (possibly infinite) sequence: \textit{consuming} a sequence item by item, or \textit{producing} a sequence item by item. Both modes of interaction are of great practical interest, they correspond, for example, to reading and writing bytes over a TCP connection. We do not consider more complex settings such as random access in our main treatment.
+
+We assume a strictly evaluated language. This makes explicit the design elements that enable laziness.
 
 \subsection{Evaluating Sequence APIs}
 
@@ -50,11 +66,11 @@ Equipped with a vague notion of wanting to ``lazily consume or produce sequences
 
 For example, a mathematician might want to work with numbers ``with no gaps in-between'' (i.e., the real numbers). They might formalize this intuitive notion as a minimal, infinite, complete ordered field. Any candidate construction (say, the Dedekind cuts of rational numbers), can now be objectively measured against the requirements. As an added bonus, it turns out that all constructions satisfying the abstract requirements are isomorphic. Some constructions might be more convenient than others in certain settings, but ultimately, they are all interchangeable.
 
-This approach of construction-independent axiomization is the only way we can conceive to bring clarity to the proliferation of competing library designs.
+This approach of construction-independent axiomization is the only way we can reasonably expect to bring clarity to the proliferation of competing API designs for lazy sequences.
 
-Sadly, we could not find an airtight mathematical formalism to capture our problem space. The criteria we now present leave gaps that must be filled by argumentation rather than proof, the API design still remains part art as much as science. This makes the following paragraphs the weakest link of this paper. We nevertheless think that both our approach and the designs it yields are novel --- and useful.
+Sadly, we could not find an airtight mathematical formalism to capture our problem space. The criteria we now present leave gaps that must be filled by argumentation rather than proof, the API design still remains part art as much as science. We nevertheless think that both our approach and our results are novel --- and useful.
 
-The criteria by which we shall evaluate lazy sequence abstractions are minimality, symmetry, and expressivity.
+The criteria by which we shall evaluate lazy sequence abstractions are \textit{minimality}, \textit{symmetry}, and \textit{expressivity}.
 
 \textbf{Minimality} asks that no aspect of the API design can be expressed through other aspects of the design. Removing any feature impacts what can be expressed.
 
@@ -64,15 +80,13 @@ The criteria by which we shall evaluate lazy sequence abstractions are minimalit
 
 \textbf{Expressivity} asks that the API design is powerful enough to get the job done, but also no more powerful than necessary. This is by far the most vague of our criteria, because we cannot simply equate more expressivity with a better design. We \textit{can}, however, draw on the theory of formal languages to categorize the classes of sequences whose consumption of production can be described by an API. Some of these classes are more natural candidates than others.
 
-Of these criteria, minimality is arguably the least controversial. Symmetry turns out to be the one we generally find the most neglected in the wild, and strict adherence to symmetry shapes the designs we propose to differ significantly from any others we are aware of. Expressivity might have the weakest definition, but turns out to be rather unproblematic: real-world constraints on the APIs lead to a level of expressivity that also has a convincing formal counterpart --- the $\omega$-regular languages (see \cref{showing_expressivity} for details) --- making us quite confident about the appropriate level of expressivity.
+Of these criteria, minimality is arguably the least controversial. Symmetry turns out to be the one we generally find the most neglected in the wild.. Expressivity might have the weakest definition, but turns out to be rather unproblematic: real-world constraints on the APIs lead to a level of expressivity that also has a convincing formal counterpart --- the $\omega$-regular languages (see \cref{evaluating_ours} for details) --- making us quite confident about the appropriate level of expressivity.
 
-TODO argue for *consistency* as a cure to the painfulness of building async stuff
-
-To obtain a first indicator for an appropriate level of expressivity, we examine the world of non-lazy sequences, i.e., sequences that can be fully represented in memory.
+To obtain a first indicator for an appropriate level of expressivity, we examine the world of non-lazy sequences, i.e., sequences that can be fully stored in memory.
 
 \subsection{Case Study: Strict Sequences}\label{strict_sequences}
 
-Representing sequences in memory can be done in such a natural way that we have never seen any explicit discussion. We shall assume a typical type system with product types (denoted $(S, T)$), sum types (denoted $S + T$), and homogeneous array types (denoted ($[T]$)).
+Representing sequences in memory can be done in such a natural way that we have never seen any explicit discussion. We shall assume a typical type system with product types (denoted $(S, T)$), sum types (denoted $S + T$), and homogeneous array types (denoted $[T]$).
 
 Let $T$ be a type, then $T$ is also the type of a sequence of exactly one item of type $T$. Now, let $S$ and $T$ be types of sequences. Then $(S, T)$ denotes the concatenations of sequences of type $S$ and sequences of type $T$, $S + T$ denotes the sequences either of type $S$ or $T$, and $[T]$ denotes the concatenations of arbitrarily (but finitely) many sequences of type $T$. None of this is particularly surprising, we basically just stated that algebraic data types and array types allow you to lay out data sequentially in memory.
 
@@ -80,24 +94,20 @@ Slightly more interesting is the blatant isomorphism to regular expressions. Eac
 
 This is useful for making our expressivity requirement for lazy sequence APIs more precise: if the natural representation of strict sequences admits exactly the regular languages, then the regular languages are also the natural candidate level of expressivity for lazy APIs.
 
-Unlike strict sequences that have to fit into finite memory, lazy sequences can be of infinite length. The natural generalization of the regular languages are the $\omega$-regular languages. Hence, this is the level of expressivity we want to see in lazy APIs.
+Unlike strict sequences that have to fit into finite memory, lazy sequences can be of infinite length. The natural generalization of the regular languages to infinite strings are the $\omega$-regular languages. Hence, this is the level of expressivity we want to see in lazy APIs.
 
-The strict case also neatly supports the design goals of minimality and symmetry. Removing any combinator leads to a strictly less expressive class of languages, and every operator comes both with a way of building up values and with a way of accessing values.
+The strict case also neatly validates the design goals of minimality and symmetry. Removing any combinator leads to a strictly less expressive class of languages, and every operator comes both with a way of building up values and with a way of accessing values.
 
-By generalizing the strict case to the lazy case, we can make our requirement of expressivity more precise, leading us to our final set of requirements: We want APIs for lazily producing or consuming sequences an item at a time, such that there is a one-to-one mapping between API instances and $\omega$-regular languages, no aspect of the APIs can be removed without loosing this one-to-one mapping, and there is full symmetry between consumption and production of a sequence. Still not entirely formal, but close enough to meaningfully evaluate and design APIs.
-
-\subsection{Organization}
-
-TODO
+By generalizing the strict case to the lazy case, we can make our requirement of expressivity more precise, leading us to our final set of requirements: We want APIs for lazily producing or consuming sequences an item at a time, such that there is a one-to-one mapping between API instances and $\omega$-regular languages, no aspect of the APIs can be removed without loosing this one-to-one mapping, and there is full symmetry between consumption and production of sequences. Still not entirely formal, but close enough to meaningfully evaluate and design APIs.
 
 
 \section{Evaluating Abstractions}\label{evaluating_others}
 
 We now start by introducing a notation for API designs. We then express several APIs we encountered in the wild in our notation, in order to build intuition, demonstrate sufficient notational expressivity, and to highlight typical violations of our design goals in popular APIs. We do not aim for an exhaustive survey of APIs, we merely select some examples to illustrate our points.
 
-In the following, we use uppercase letters as type variables. $(S, T)$ denotes the product type of types $S$ and $T$ (intuitively, the cartesian product of $S$ and $T$), and $()$ denotes the unit type (intuitively, the type with only a single value). $S | T$ denotes the sum type of $S$ and $T$ (intuitively, the disjoint union of $S$ and $T$), and $!$ denotes the empty type (intuitively, the type that admits no value). Finally, we write $S \rightarrow T$ for the type of (pure) functions with an argument of type $S$ and a return value of type $T$. Note we take a purely functional approach here: a function does not mutate its argument, it simply produces a new value.
+In the following, we use uppercase letters as type variables. $(S, T)$ denotes the product type of types $S$ and $T$ (intuitively, the cartesian product of $S$ and $T$), and $()$ denotes the unit type (intuitively, the type with only a single value). $S | T$ denotes the sum type of $S$ and $T$ (intuitively, the disjoint union of $S$ and $T$), and $!$ denotes the empty type (the type that admits no values). Finally, we write $S \rightarrow T$ for the type of (pure) functions with an argument of type $S$ and a return value of type $T$. Note we take a purely functional approach here: a function does not mutate its argument, it simply produces a new value.
 
-We specify an API as a list of named types (typically functions). Each API can quantify type variables that can be used in its \textit{members}\footnote{More formally, this is a notation for ad-hoc polymorphism like Haskell's type classes, Java's interfaces, or Rust's traits.}. As an example, consider the following API:
+We specify an API as a list of named types (typically functions). Each API can quantify type variables that can be used in its \textit{members}\footnote{More formally, this is a notation for ad-hoc polymorphism~\cite{wadler1989make} like Haskell's type classes, Java's interfaces, or Rust's traits.}. As an example, consider the following API:
 
 \begin{lstlisting}[language=Python]
 API Iterator<P, I>
@@ -106,19 +116,21 @@ API Iterator<P, I>
 
 This pseudo-type fragment states that in order to obtain a concrete \texttt{Iterator}, one needs two types: a type $P$ (\textbf{P}roducer) and a type $I$ (\textbf{I}tem). These types have to be related through existence of a function \texttt{next}, which maps a producer to either an item and and a new producer, or to a value that signifies that no further items can be produced.
 
-To consume this iterator, one would repeatedly call \texttt{next} on the producer returned from the prior call of \texttt{next}, until no further Items are produced.
+To consume this iterator, one would repeatedly call \texttt{next} on the producer returned from the prior call of \texttt{next}, until a call returns $()$.
 
-A concrete example of an iterator are the homogenous arrays of $I$s as producers of $I$s; \texttt{next} returns $()$ for the empty array, otherwise it returns the first item in the array and the array obtained by removing the first item.
+A concrete example of such an iterator are the homogenous arrays of $I$s as producers of items of type $I$s; \texttt{next} returns $()$ for the empty array, otherwise it returns the first item in the array and the array obtained by removing the first item.
 
-This API is completely stateless, we never mutate any $P$. In an imperative programming language, one would typically use a function that takes a reference to a $P$ and returns either an $I$ or $()$, and then makes all implementors pinky-swear to not invoke the function with a $P$ that has returned $()$ previously.
+This API is completely stateless, we never mutate any $P$. In an imperative programming language, one would typically use a function that takes a reference to a $P$ and returns either an $I$ or $()$, and then make all implementors pinky-swear to not invoke the function with a $P$ that has returned $()$ previously.
 
 We prefer the purely functional notation, because it can express the pinky-swearing API contract on the type level. But all our designs can easily be translated into an imperative, stateful setting. The other way around, by converting stateful references into input values and output values, we can represent APIs from imperative languages in our notation. For example, this \texttt{Iterator} API captures the semantics of commonly used iterator APIs such as those of Python\footnote{\url{https://wiki.python.org/moin/Iterator}} or Rust\footnote{\url{https://doc.rust-lang.org/std/iter/trait.Iterator.html}}. It handily abstracts over the fact that Rust has actual sum types, whereas Python signals the end of iteration with an exception.
 
-Without devoting too much space to it, we want to point out that even for such a simple special case of sequence processing as iteration --- i.e., synchronous production of finite sequences without buffering or error handling --- there are several, non-isomorphic approaches in the wild. Both Java\footnote{\url{https://docs.oracle.com/javase/8/docs/api/java/util/Iterator.html}} and Javascript\footnote{\url{https://tc39.es/ecma262/multipage/control-abstraction-objects.html\#sec-iterator-interface}} use APIs with slightly different properties; they differ in how early the code interacting with the iterator knows that no further items will be produced.
+% Without devoting too much space to it, we want to point out that even for such a simple special case of sequence processing as iteration --- i.e., synchronous production of finite sequences without buffering or error handling --- there are several, non-isomorphic approaches in the wild. Both Java\footnote{\url{https://docs.oracle.com/javase/8/docs/api/java/util/Iterator.html}} and Javascript\footnote{\url{https://tc39.es/ecma262/multipage/control-abstraction-objects.html\#sec-iterator-interface}} use APIs with slightly different properties; they differ in how early the code interacting with the iterator knows that no further items will be produced.
 
-Given the symmetry between producing and consuming data, the virtual non-existence of (synchronous, non-error-handling) APIs for consuming data step by step is jarring. Java has an \texttt{Appendable} interface\footnote{\url{https://docs.oracle.com/javase/8/docs/api/java/lang/Appendable.html}}, but it is specialized to characters, and has a much less prominent role than the \texttt{Iterator} interface. Clojure complects both production and consumption into a single \texttt{Sequence} interface\footnote{\url{https://clojure.org/reference/sequences\#_the_seq_interface}}. Several languages do give the opposite of iterators a prominent role: for loops that consume an iterator item by item. Baking sequence production via first-class values into a language while turning sequence consumption into a purely syntactic component with no run-time presence massively breaks symmetry from a high level design perspective.
+Given the symmetry between producing and consuming data, the virtual non-existence of (synchronous, non-error-handling) APIs for consuming data step by step is jarring. Java has an \texttt{Appendable} interface\footnote{\url{https://docs.oracle.com/javase/8/docs/api/java/lang/Appendable.html}}, but it is specialized to characters, and has a much less prominent role than the \texttt{Iterator} interface. Clojure complects both production and consumption into a single \texttt{Sequence} interface\footnote{\url{https://clojure.org/reference/sequences\#_the_seq_interface}}.
 
-Moving beyond synchronous iterators, \textit{asynchronous} producers --- often called \textit{streams} --- typically come with buffering and error handling. We shall abstract over\footnote{The seasoned Haskell-affectionado will immediately see that parameterizing our presentation over a monad for effectful computation~\cite{wadler1995monads} would restore rigorous reasoning to our handwavy act of abstraction. We posit that to the readers who are already familiar with effect-management through monads, filling in the blanks is an easy exercise. To those readers who are not famliar with this technique --- i.e., the vast majority of practicioners we would like to reach --- obscuring our presentation behind higher-kinded type constructors poses an unnecessary barrier to access.} both buffering and asynchronicity, as they do not influence matters of minimality, symmetry, or expressiveness regarding formal languages. We believe that designing a solid API irrespective of buffering and asynchronicity and then adding them in a way that is idiomatic for the programming language in question leads to clearer designs. In particular, we see no reason why synchronous and asynchronous sequence APIs in the same language should not be completely analogous.
+Several languages do give the opposite of iterators a prominent role via specialzed loop statements that consume an iterator item by item. Handling sequence production via first-class values while turning sequence consumption into a purely syntactic component with no run-time presence massively breaks symmetry from a high level design perspective.
+
+Moving beyond synchronous iterators, \textit{asynchronous} producers --- often called \textit{streams} --- typically come with buffering and error handling. We shall abstract over\footnote{The seasoned Haskell-affectionado will immediately see that parameterizing our presentation over a monad for effectful computation~\cite{wadler1995monads} would restore rigorous reasoning to our handwavy act of abstraction. We posit that to the readers who are already familiar with effect-management through monads, filling in the blanks is an easy exercise. To those readers who are not famliar with this technique --- i.e., the vast majority of practicioners we would like to reach --- obscuring our presentation behind higher-kinded type constructors poses an unnecessary barrier to access. Aside from a recent example of a monad for asynchronous effects~\cite{zhao2020asynchronous}, the interested reader might also want to look at asynchronous \textit{algebraic} effects~\cite{leijen2017structured}\cite{ahman2021asynchronous}.} both buffering and asynchronicity, as they do not influence matters of minimality, symmetry, or expressiveness regarding formal languages. We believe that designing a solid API irrespective of buffering and asynchronicity and then adding them in a way that is idiomatic for the programming language in question leads to clearer designs. In particular, we see no reason why synchronous and asynchronous sequence APIs in the same language should not be completely analogous.
 
 An example where the asynchronous producer API is equivalent to the synchronous iterator API is --- as of writing --- Rust\footnote{\url{https://docs.rs/futures/0.3.30/futures/stream/trait.Stream.html}}. This is rather atypical, because asynchronous APIs, which are often motivated by networking, usually emphasize error handling. In the iterator API, one can use a sum type of actual items and an error type as the type $I$, but on the type level, it remains possible to continue iterating after an error. The API is accurate for recoverable errors only.
 
@@ -271,9 +283,9 @@ Our fairly principled approach of aiming for  minimal, symmetric, regular-langua
 
 We see two ways out of this problem. The simplemost solution is acceptance. When a programmer wishes to write data to a network through a consumer interface, they need a corresponding producer to emit any feedback such as connection failures. Considering that typical networking APIs use the same error type for reading and writing data, this doesn't seem too far-fetched. Then again, the difficulties in migrating from more typical APIs to this style of error handling are hard to estimate. An argumentative essay like this one cannot conclusively establish a result, we merely want to raise that accepting a consumer API without error reporting might be more feasible than it appears at first glance.
 
-The other solution is to consider fallibility as an \textit{effect}. Just like the functions we use in our APIs might be asynchronous, the might also be fallible. Different programming languages represent the different ways: some could use exceptions, others could consistently use a \texttt{Result} type (a sum type of either the actual value of interest or an error value) --- the latter is a simple and classic example of monadic effect handling. We can keep using the same notation as before, but consider every function as possibly fallible.
+The other solution is to consider fallibility as an \textit{effect}. Just like the functions we use in our APIs might be asynchronous, they might also be fallible. Different programming languages can represent this in different ways: some could use exceptions, others could consistently use a \texttt{Result} type (a sum type of either the actual value of interest or an error value) --- the latter is a simple and classic example of monadic effect handling. We can keep using the same notation as before, but consider every function as possibly fallible.
 
-To make explicit the transformation from our APIs to fallible versions, here is what the results look like errors of type $E$, when neither relying of exceptions nor on explicitly abstracting over effects via monads:
+To make explicit the transformation from our APIs to fallible versions, here is what the results look like for errors of type $E$, when neither relying of exceptions nor on explicitly abstracting over effects via monads:
 
 \begin{lstlisting}[language=Python]
 API FallibleConsumer<C, I, F, E>
@@ -284,7 +296,7 @@ API FallibleProducer<P, I, F, E>
     produce: P -> (I, P) | F | E
 \end{lstlisting}
 
-But interesting to consider that the \texttt{FallibleProducer} API appears asymmetric to the \texttt{FallibleConsumer} API without the context of errors-as-effects, as it does not mirror the communication flow of the consumer by having functions that take $E$s as arguments. The return type of \texttt{produce} also appears to violate minimality, as $E$ and $F$ could be combined into a single type parameter in principle. This invalidates our earlier criticism of the Swift-derived \texttt{FallibleIterator} API of \cref{evaluating_others}: a return type of \texttt{I | () | E} correctly separates the final item (hardcoded to type \texttt{()} in the Swift case) from the error effect of type $E$.
+It is interesting to consider that the \texttt{FallibleProducer} API appears asymmetric to the \texttt{FallibleConsumer} API without the context of errors-as-effects, as it does not mirror the communication flow of the consumer by having functions that take $E$s as arguments. The return type of \texttt{produce} also appears to violate minimality, as $E$ and $F$ could be combined into a single type parameter in principle. This invalidates our earlier criticism of the Swift-derived \texttt{FallibleIterator} API of \cref{evaluating_others}: a return type of \texttt{I | () | E} correctly separates the final item (hardcoded to type \texttt{()} in the Swift case) from the error effect of type $E$.
 
 It took a few pages, but now we have a more nuanced view by which to understand the API designs encountered in the wild. This deeper understanding can hopefully serve to guide future API designs that otherwise would have to rely on gut-feeling and copying older designs.
 
@@ -292,7 +304,7 @@ We will continue our investigation with the \texttt{Producer} and \texttt{Consum
 
 \section{Working With Producers and Consumers}
 
-Having settled on designs for \texttt{Producer} and \texttt{Consumer} APIs, we now turn to the can or should should be used in practice. We note a powerful pattern composability in \cref{conducer}, muse about language-level support in \cref{syntax}, before turning to matters of efficiency in \cref{bulk}.
+Having settled on designs for \texttt{Producer} and \texttt{Consumer} APIs, we now turn to how they can or should should be used in practice. We note a powerful pattern composability in \cref{conducer}, muse about language-level support in \cref{syntax}, before turning to matters of efficiency in \cref{bulk}.
 
 \subsection{Conducers}\label{conducer}
 
@@ -371,7 +383,7 @@ until consume final z
     doSomething(x + y + z)
 \end{lstlisting}
 
-To allow for control about what to do when \textit{close} is called depending on the current state of the consumer, the naive \texttt{until consume final} can be replaced with a mechanism that mimics \texttt{try-catch} blocks:
+To allow for control about what to do when \textit{close} is called depending on the current state of the consumer, the naïve \texttt{until consume final} can be replaced with a mechanism that mimics \texttt{try-catch} blocks:
 
 \begin{lstlisting}[language=Python]
 consumer
@@ -509,7 +521,13 @@ Finally, APIs with support for seeking in sequences or more complex graphs open 
 
 \section{Further Reading}
 
+In this final section, we want to share some references that could be of interest to anyone wishing to pursue those open questions or to implement a library of sequence abstractions.
 
+We have primarily presented our API designs by deriving them from first principles, instead of relating them to existing designs. While there are plenty of languages and libraries to choose from for documentation of existing APIs, there is much less available material on the reasoning behind those APIs. A notable exception are Oleg Kiselyov's \textit{iteratees}~\cite{kiselyov2012iteratees} and the resulting streamlined and well-documented \texttt{iterIO} Haskell library\footnote{\url{https://hackage.haskell.org/package/iterIO-0.2.2/docs/Data-IterIO.html}}. Their expressivity and rich algebraic structures are remarkable, as is the viewpoint of iteratees as communicating sequential processes. Yet, the design differs significantly from ours, the inherent asymmetry is striking: enumerators and iteratees are not at all dual. Particularly interesting is the notion of \texttt{Inum}s in the \texttt{iterIO} library: they fulfil the same role as our naïve conducers, while being completely asymmetric (and hence avoiding the problems that require us to move from naïve to actual conducers).
+
+Kiselyov's treasure trove of a website\footnote{\url{https://okmij.org/ftp/}} contains several\footnote{\url{https://okmij.org/ftp/Haskell/Iteratee/index.html}} collections\footnote{\url{https://okmij.org/ftp/Streams.html}} of writing\footnote{\url{https://okmij.org/ftp/Scheme/enumerators-callcc.html}} that pertain to sequence APIs. The writing focuses almost exclusively on producers, with barely a word on consumers or any notions of symmetry or duality. We find it quite exciting to see such a different (and deep) take on the same material.
+
+Functional reactive programming (FRP) is concerned with APIs for building systems on event streams, a good overview is given in~\cite{perez2016functional}. Whereas a sequence can be interpreted as a value evolving over discrete timesteps, FRP tackles the challenges of building abstractions (and efficient implementations) for values varying over a continuous notion of time. Discussion of FRP invariably turns to restricting the treatment of time to that of discrete event steps; this notion of FRP is all about what we called producers, discussing efficient implementation techniques, adapters, and combinators. A prominent example of this brand of FRP is the Elm language~\cite{czaplicki2013asynchronous}. \Cref{wtfjs} contains a dozen popular javascript libraries for such FRP. 
 
 \url{http://www.litech.org/~jed/papers/jmatch-popl2006.pdf} Interruptible Iterators
 
@@ -525,23 +543,19 @@ Segmented Iterators and Hierarchical Algorithms \url{https://lafstern.org/matt/s
 
 New Iterator Concepts \url{https://svn.osgeo.org/fdo/branches/3.4/Thirdparty/boost/libs/iterator/doc/new-iter-concepts.pdf}
 
-frp
-
-coalgebra, coinduction, etc
+coalgebra, coinduction, etc. bisumulation
 
 for strict sequence typing: Strongly Typed Heterogeneous Collections \url{http://softlang.uni-koblenz.de/HList/paper.pdf}
 
-Iterees: 
-\url{https://link.springer.com/chapter/10.1007/978-3-642-29822-6_15}
-\url{https://hackage.haskell.org/package/iterIO-0.2.2/docs/Data-IterIO.html}
 
 session types
 
 pull-stream paper
 
-\url{http://jiangxi.cs.uwm.edu/publication/rebls2020.pdf}
+\url{http://jiangxi.cs.uwm.edu/publication/rebls2020.pdf} (good related work)
 
-\url{https://arxiv.org/pdf/1612.06668.pdf} (good related work)
+\url{https://arxiv.org/pdf/1612.06668.pdf} (good related work) Structured Asynchrony with Algebraic Effects
+Asynchronous Effects DANEL AHMAN and MATIJA PRETNAR,
 
 \section{Conclusion}\label{conclusion}
 
@@ -590,7 +604,7 @@ The following libraries do not explicitly define \textit{streams}, but they do w
     \item \url{https://github.com/mattbaker/Reactive.js}
 \end{itemize}
 
-These libraries exist in addition to language-level or runtime-level APIs such as the following:
+All these libraries exist in addition to language-level or runtime-level APIs such as the following:
 
 \begin{itemize}
     \item \href{https://nodejs.org/api/stream.html}{Node JS Streams}, and their evolution: \begin{itemize}
