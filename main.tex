@@ -508,14 +508,14 @@ One problem with the reader and writer APIs is that they do not compose very nic
 
 \begin{lstlisting}[language=Python]
 API BulkProducer<P, I, F>
+extends BufferedProducer<P, I, F>
     producer_slots: (P) -> &r[I] | F
     process_produced: (P, Nat) -> P
-extends BufferedProducer<P, I, F>
 
 API BulkConsumer<C, I, F>
+extends BufferedConsumer<C, I, F>
     consumer_slots: (C) -> &w[I]
     process_consumed: (P, Nat) -> P
-extends BufferedConsumer<C, I, F>
 # To close, use the BufferedConsumer
 # close function
 \end{lstlisting}
@@ -530,29 +530,85 @@ Given such \textit{bulk\_produce} and \textit{bulk\_consume} functions, there ar
 
 A final, interesting observation on this topic concerns memory safety. In a language with a concept of uninitialized memory that is acceptable to write to but not to read from, a bulk consumer is free to expose a (write-only) slice of uninitialized memory in its \textit{consumer\_slots} function. Whenever \textit{process\_consumed} is called thereafter, the consumer can assume that the memory for the indicated number of items has been initialized. If the calling code is faulty, this can lead to undefined behavior, making the \textit{process\_consumed} function \textit{unsafe} in the Rust sense of the word, i.e., it can trigger undefined behavior when its contract is not upheld. There is no such problem with the bulk producer API. Thankfully, the \textit{bulk\_consume} helper function fully insulates from this source of errors.
 
+\section{Summary}
+
+This concludes our main arguments and designs. \Cref{apiSummary} lists our final APIs. Our main points of departure from current mainstream designs are the following:
+
+\begin{figure*}
+    \centering
+    \begin{minipage}[t]{.5\textwidth}
+\begin{lstlisting}[language=Python]
+API Producer<P, I, F>
+    produce: P -> (I, P) | F
+
+
+API BufferedProducer<P, I, F>
+extends Producer<P, I, F>
+    slurp: P -> P
+
+API BulkProducer<P, I, F>
+extends BufferedProducer<P, I, F>
+    producer_slots: (P) -> &r[I] | F
+    process_produced: (P, Nat) -> P
+\end{lstlisting}
+\end{minipage}%
+\begin{minipage}[t]{.5\textwidth}
+\begin{lstlisting}[language=Python]
+API Consumer<C, I, F>
+    consume: (I, C) -> C
+    close: (F, C) -> ()
+
+API BufferedConsumer<C, I, F>
+extends Consumer<C, I, F>
+    flush: C -> C
+
+API BulkConsumer<C, I, F>
+extends BufferedConsumer<C, I, F>
+    consumer_slots: (C) -> &w[I]
+    process_consumed: (P, Nat) -> P
+\end{lstlisting}
+    \end{minipage}
+    \caption{Our API designs in a single place.}
+    \label{apiSummary}
+\end{figure*}
+
+\begin{itemize}
+    \item Full symmetry between producers and consumers.
+    \item Equivalent APIs irrespective of effects such as asynchrony or fallability.
+    \item A dedicated type for the last sequence item, drastically increasing expressivity.
+    \item Slurping producers.
+    \item Bulk processing for items other than raw bytes.
+    \item Subtyping relation between bulk processors and regular processors.
+    \item Zero-copy bulk APIs.
+    \item Dedicated consumer syntax as a counterpart to generators.
+    \item Conducer syntax to automatically derive adapters for both consumers and producers simultaneously.
+\end{itemize}
+
 \section{Onward!}\label{fun}
 
-This concludes our main arguments and designs. But there is still plenty of engineering and research left to be done.
+We have proposed and argued for some simple designs, but there is still plenty of engineering and research left to be done.
 
 What is up with conducers? Is the introduction of dedicated syntax really the best way of deriving consumer \textit{and} producer adapters from a single specification? Is there a nicer API design that captures the same degree of composability without requiring this split? If dedicated syntax is the way to go, should there be dedicated syntax for bulk producers, bulk consumers, and bulk conducers? What would it look like? What about vectored I/O\footnote{\url{https://en.wikipedia.org/wiki/Vectored_I/O}}?
 
-Concerning the dedicated syntax, we took a lot of shortcuts, not least of all the absolutely horrible syntax for consumers. On the more formal side, what should be the proper --- say, denotational --- semantics of a \texttt{conducer} syntactic element be? Given such formal semantics, what is a translation of the syntax into ``normal'' syntactic components of equivalent semantics? Which ``normal'' constructs are particularly helpful --- coroutines, continuations? Can you elegantly avoid such fancy constructs altogether?
+Concerning the dedicated syntax, we took a lot of shortcuts, not least of all the deliberately horrible syntax for consumers. On the more formal side, what should be the proper --- say, denotational --- semantics of a \texttt{conducer} syntactic element be? Given such formal semantics, what is a translation of the syntax into ``normal'' syntactic components of equivalent semantics? Which ``normal'' constructs are particularly helpful --- coroutines, continuations? Can you elegantly avoid such fancy constructs altogether?
 
 Is the fact that conducers generalize coroutines a coincidence, or do conducers deserve study as a control-flow mechanism in their own right? Coroutines are as expressive as one-shot continuations, but strictly less expressive than general continuations~\cite{moura2009revisiting}. Where do conducers fall in this spectrum?
 
-What is up with the symmetry between producers and consumers? Is there a general, formal setting for expressing APIs with a general, precise notion of duality, in which producers and consumers are dual in a formal sense? Did we simply not find it yet, or is this impossible? For infinite, homogeneous sequences, producers and consumers are actually dual (and correspond nicely to coalgebra and algebra respectively). Why and where exactly do things go wrong once you add dedicated final elements or effects such as irrecoverable errors?
+What is up with the symmetry between producers and consumers? Is there a general, formal setting for expressing APIs with a general, precise notion of duality, in which producers and consumers are dual in a formal sense? Did we simply not find it yet, or is this impossible? For infinite, homogeneous sequences, producers and consumers are actually dual. Why, and where \textit{exactly} do things go wrong when adding dedicated final elements or effects such as irrecoverable errors?
 
-How far can we take our unsatisfying substitutes for proper duality --- symmetry and inverse-like composition? There is plenty of literature on proving iterators correct, see~\cite{bily2022compositional} for a recent example. How much of such literature carries over to consumers, and how much has to be redeveloped from scratch? This question should serve as a powerful motivation for finding a framing in which producers and consumers are fully dual. Similar thoughts apply to optimization techniques.
+How far can we take our unsatisfying substitutes for proper duality --- symmetry and inverse-like composition? There is plenty of literature on proving iterators correct, see~\cite{bily2022compositional} for a recent example. How much of such literature carries over to consumers, and how much has to be redeveloped from scratch? This question should serve as a powerful motivation for finding a framing in which producers and consumers are fully dual. Similar thoughts apply to optimization techniques~\cite{kiselyov2017stream} or code synthesis\cite{rayside2012synthesizing}.
+
+Session types~\cite{dezani2010sessions}\cite{huttel2016foundations} aim to statically type communication patterns in a way that guarantees, for example, deadlock-freedom. Our explicit final item type allows us to also accurately type certain classes of communication patterns. How much overlap is there between our work and session types, can they benefit from each other?
 
 Regarding more direct concerns of software engineering, which adaptors or combinators should make up the standard toolbox for composing sequence APIs? Which algebraic laws must they fulfil? What is a good technique for implementing combinators only once and then automatically deriving bulk versions? Conducers provide a good framing for unary combinators, but what about other combinators (say, a binary concatenation combinator)?
 
-Producers and consumers strictly limit the interaction with a sequence. Aside from optimization details such as functions for providing estimates of the minimum and maximum number of items that can still be processed, the most obvious extension of our APIs is that of random-access. Readers and writers originate from the Unix notion of \textit{files}, and \textit{seeking} in a file is a core concern of this perspective. What do good APIs for seeking look like? Support for infinity sequences mandates relative offsets rather than absolute indexing. Does this mean that all such generalizations amount to Turing-machine APIs with a movable read/write head? Should writing do overwrites exclusively, or is there design space for elastic bands that support insertion of new items in-between older items (as well as proper deletion)? Can and should these two modes be captured in the same API, or do they require separate abstractions? What does a lattice of (sub-) APIs look like that provides a more nuanced yet practically useful version of ``everything is a file''?
+Producers and consumers strictly limit \textit{where} they interact with a sequence. Aside from optimization details such as functions for providing estimates of the minimum and maximum number of items that can still be processed, the most obvious extension of our APIs is that of random-access. Readers and writers originate from the Unix notion of \textit{files}, and \textit{seeking} in a file is a core concern of this perspective. What do good APIs for seeking look like? Support for infinity sequences mandates relative offsets rather than absolute indexing. Does this mean that all such generalizations amount to Turing-machine APIs with a movable read/write head? Should writing do overwrites exclusively, or is there design space for elastic bands that support insertion of new items in-between older items (as well as proper deletion)? Can and should these two modes be captured in the same API, or do they require separate abstractions? What does a lattice of (sub-) APIs look like that provides a more nuanced yet practically useful version of ``everything is a file''?
 
-Another avenue for generalization is provided by the expressive power of the APIs. Our producers and consumers correspomnd to the ($\omega$-) regular languages. Are there elegant APIs that capture the context-free languages? If you squint a lot, (sets of) producer types look quite similar to left-regular grammars --- which should not be too surprising, given the relation with regular languages. What is the formal version of ``squinting a lot''? Does it have an inverse, and which APIs do you obtain by ``unsquinting'' the grammars in Chomsky normal form?
+Another avenue for generalization is provided by the expressive power of the APIs. Our producers and consumers correspond to the ($\omega$-) regular languages. Are there elegant APIs that capture the context-free languages? If you squint a lot, (sets of) producer types look quite similar to left-regular grammars --- which should not be too surprising, given the relation with regular languages. What is the formal version of ``squinting a lot''? Does it have an inverse? Which computational interpretation do you obtain by ``unsquinting'', say, the grammars in Chomsky normal form?
 
 Yet another (arguably more practically relevant) generalization is from sequences to other graphs. What are appropriate APIs for consuming or producing trees? How do different traversal orders (breadth-first, depth-first, etc) factor into the API designs? What about APIs for exploring only a single path through a tree? Will there be a link between APIs for tree processing and grammars of context-free languages? How far can we take sensible APIs for traversing more complex graphs like DAGs or even arbitrary digraphs?
 
-Finally, APIs with support for seeking in sequences or more complex graphs open up the question of \textit{who} performs the seeking. In a traditional file system API for seeking in and reading from a file, it is the user code that invokes the seeking. But consider instead a texteditor that feeds changes to a text buffer to some plugin. Here, the user code (i.e., the plugin) reads data again, but it does not control \textit{where} in the sequence the updates happen. The same kind of inverted seeking can happen for more complex data structures: a text editor might update a plugin about changes to a (higher-order) syntax tree, for example. We are not aware of any principled investigation into such APIs.
+Finally, APIs with support for seeking in sequences or more complex graphs open up the question of \textit{who} performs the seeking. In a traditional file system API for seeking in and reading from a file, it is the user code that invokes the seeking. But consider instead a texteditor that feeds changes to a text buffer to some plugin. Here, the user code (i.e., the plugin) reads data, but it does not control \textit{where} in the sequence it reads. The same kind of inverted seeking can happen for more complex data structures: a text editor might update a plugin about changes to a (higher-order) syntax tree, for example. We are not aware of any principled investigation into such APIs.
 
 \section{Further Reading}
 
@@ -560,47 +616,30 @@ In this final section, we want to share some references that could be of interes
 
 We have primarily presented our API designs by deriving them from first principles, instead of relating them to existing designs. While there are plenty of languages and libraries to choose from for documentation of existing APIs, there is much less available material on the reasoning behind those APIs. A notable exception are Oleg Kiselyov's \textit{iteratees}~\cite{kiselyov2012iteratees} and the resulting streamlined and well-documented \texttt{iterIO} Haskell library\footnote{\url{https://hackage.haskell.org/package/iterIO-0.2.2/docs/Data-IterIO.html}}. Their expressivity and rich algebraic structures are remarkable, as is the viewpoint of iteratees as communicating sequential processes. Yet, the design differs significantly from ours, the inherent asymmetry is striking: enumerators and iteratees are not at all dual. Particularly interesting is the notion of \texttt{Inum}s in the \texttt{iterIO} library: they fulfil the same role as our naïve conducers, while being completely asymmetric (and hence avoiding the problems that require us to move from naïve to actual conducers).
 
-Kiselyov's treasure trove of a website\footnote{\url{https://okmij.org/ftp/}} contains several\footnote{\url{https://okmij.org/ftp/Haskell/Iteratee/index.html}} collections\footnote{\url{https://okmij.org/ftp/Streams.html}} of writing\footnote{\url{https://okmij.org/ftp/Scheme/enumerators-callcc.html}} that pertain to sequence APIs. The writing focuses almost exclusively on producers, with barely a word on consumers or any notions of symmetry or duality. We find it quite exciting to see such a different (and deep) take on the same material.
+Kiselyov's treasure trove of a website\footnote{\url{https://okmij.org/ftp/}} contains several\footnote{\url{https://okmij.org/ftp/Haskell/Iteratee/index.html}} collections\footnote{\url{https://okmij.org/ftp/Streams.html}} of writing\footnote{\url{https://okmij.org/ftp/Scheme/enumerators-callcc.html}} that pertain to sequence APIs. The writing focuses almost exclusively on producers, with barely a word on consumers or any notions of symmetry or duality. We find it quite exciting that there is such a deep take on the same material that reaches such different conclusions.
 
-Functional reactive programming (FRP) is concerned with APIs for building systems on event streams, a good overview is given in~\cite{perez2016functional}. Whereas a sequence can be interpreted as a value evolving over discrete timesteps, FRP tackles the challenges of building abstractions (and efficient implementations) for values varying over a continuous notion of time. Discussion of FRP invariably turns to restricting the treatment of time to that of discrete event steps; this notion of FRP is all about what we called producers, discussing efficient implementation techniques, adapters, and combinators. A prominent example of this brand of FRP is the Elm language~\cite{czaplicki2013asynchronous}. \Cref{wtfjs} contains a dozen popular javascript libraries for such FRP. 
+Functional reactive programming (FRP) is concerned with APIs for building systems on event streams, a good overview is given in~\cite{perez2016functional}. Whereas a sequence can be interpreted as a value evolving over discrete timesteps, FRP tackles the challenges of building abstractions (and efficient implementations) for values varying over a continuous notion of time. Discussion of FRP invariably turns to restricting the treatment of time to that of discrete event steps; this notion of FRP is all about what we called producers, discussing efficient implementation techniques, adapters, and combinators. A prominent example of this brand of FRP is the Elm language~\cite{czaplicki2013asynchronous}. \Cref{wtfjs} contains a dozen popular javascript libraries for such FRP.
 
-\url{http://www.litech.org/~jed/papers/jmatch-popl2006.pdf} Interruptible Iterators
+FRP stands on the shoulders of stream processing. An instructive survey by Stephens~\cite{stephens1997survey} provides a good introduction. Like us, Stephens laments the lack of a unified theory underlying disparate API design efforts. The theory that Stephens then proposes is a mathematical one rather than one of API designs.
 
-\url{https://ora.ox.ac.uk/objects/uuid:87a8d92c-017c-4b3f-89a1-ac3056ad51d7/files/m4762057d0a14ed0f7db1ad98e560fa3f} The Essence of the Iterator Pattern
+The implementation of iterators (and hence, producers and the symmetric consumers) in imperative langages is typically a highly stateful business. In many cases, particularly when no side-effects are involved, there exist purely functional alternatives~\cite{baker1993iterators}. Gibbons and Oliveira~\cite{gibbons2009essence} give a particularly thorough account that incorporates effect handling in a functional setting. The reader who has not spent years obtaining intimite familiarity with the Haskell standard library should be warned that reading this paper is a lot like reading the Silmarillion, in that a startling fraction of words past the introduction are made-up.
 
-Iterators: Signs of Weakness in Object-Oriented Languages \url{https://dl.acm.org/doi/pdf/10.1145/165507.165514}
+In discussing algebraic datatypes together with homogeneous array types as a representation for strict sequences in memory, we glossed over the fact that such representations do not allow numeric indexing. Such representations are also possible, even while maintaining static typing~\cite{kiselyov2004strongly}. The degree to which the strictly limited access provided by producers and consumers simplifies typing compared to a random-access collection is remarkable.
 
-Design and Specification of Iterators Using the Swapping Paradigm \url{https://www.researchgate.net/profile/Bruce-Weide/publication/3187667_Design_and_Specification_of_Iterators_Using_the_Swapping_Paradigm/links/09e415117c907dd6da000000/Design-and-Specification-of-Iterators-Using-the-Swapping-Paradigm.pdf}
+We finish with a few pieces of literature on iterators that arguably did not stand the test of time, but which provide some creative input to the design space.
 
-Synthesizing Iterators from Abstraction Functions \url{https://dspace.mit.edu/bitstream/handle/1721.1/87058/Jackson_Synthesizing%20iterators.pdf?sequence=1&isAllowed=y}
+Interruptible Iterators~\cite{liu2006interruptible} provide an alternative to generator syntax for implementing iterators. \textit{Interrupts} aim to allow for easy implementation of internal state changes between or during iteration steps.
 
-Segmented Iterators and Hierarchical Algorithms \url{https://lafstern.org/matt/segmented.pdf}
+Segmented iterators~\cite{austern2000segmented} address efficiency concerns when working with segmented data structures such as hash tables that consist of several, disjoint arrays of items.
 
-New Iterator Concepts \url{https://svn.osgeo.org/fdo/branches/3.4/Thirdparty/boost/libs/iterator/doc/new-iter-concepts.pdf}
+Iterators in the \textit{swapping paradigm}~\cite{weide1994design} tackle difficulties in formally verifying properties of iterators. They reimagine iterator for programming laguages that do not \textit{copy} values by default, but \textit{swap} them instead. This programming model anticipates the linear-type-like move semantics of languages like Rust.
 
-coalgebra, coinduction, etc. bisumulation
+\bibliographystyle{alphaurl}
+\bibliography{main}
 
-for strict sequence typing: Strongly Typed Heterogeneous Collections \url{http://softlang.uni-koblenz.de/HList/paper.pdf}
+\appendix
 
-
-session types
-
-pull-stream paper
-
-\url{http://jiangxi.cs.uwm.edu/publication/rebls2020.pdf} (good related work)
-
-\url{https://arxiv.org/pdf/1612.06668.pdf} (good related work) Structured Asynchrony with Algebraic Effects
-Asynchronous Effects DANEL AHMAN and MATIJA PRETNAR,
-
-\section{Conclusion}\label{conclusion}
-
-TODO
-
-vision of unified, consistent APIs throughout a full language ecosystem. Getting things right is simpler than getting them wrong.
-
-On a meta note, this essay constitutes evidence that you can share research results with broad applications to a wide range of programming practitioners, without assuming the kind of deep, intuitive familiarity with the Haskell standard library that requires years of practice to obtain. How did that ever become accepted practice in the first place?
-
-\section{Appendix A: Javascript Libraries}\label{wtfjs}
+\section{Appendix: Javascript Libraries}\label{wtfjs}
 
 This list of javaScript libraries for working with lazy sequences is intended to demonstrate that there is a clear need for a solid design that people can fall back to rather than reinventing ad-hoc wheels over and over. We list libraries with at least 200 stars on Github, as of February 2024, found by searching Gihub for ``stream'', ``observable'', and ``reactive''.
 
@@ -653,6 +692,6 @@ All these libraries exist in addition to language-level or runtime-level APIs su
     \item \href{https://tc39.es/ecma262/multipage/control-abstraction-objects.html#sec-asynciteratorprototype}{ECMAScript AsyncIterator}
 \end{itemize}
 
-\bibliographystyle{alphaurl}
-\bibliography{main}
+Of these roughly 30 competing designs, the pull-streams API is the only one for which we are aware of any academic treatment~\cite{lavoie2018formalization}.
+
 \end{document}
