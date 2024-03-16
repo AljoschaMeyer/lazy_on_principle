@@ -48,13 +48,13 @@ Starting from ``\textit{Which} abstraction is the best?'', we quickly moved to `
 
 We further argue that common designs are needlessly inconsistent.
 
-To give a concrete example: in Rust\footnote{Rust is simply our go-to programming language. We are not aware of \textit{any} mainstream language that is significantly more consistent in its APIs.}, the (de-facto standard) \texttt{Stream} API\footnote{\url{https://docs.rs/futures/0.3.30/futures/stream/trait.Stream.html}} for receiving data from an asynchronous data source has no notion of an end-of-stream and no notion of irrecoverable errors. Meanwhile, the \texttt{Read} API\footnote{\url{https://doc.rust-lang.org/std/io/trait.Read.html}} for receiving many items from a data source with a single function call has both a notion for an end of data availability and for irrecoverable errors. Items are hardcoded to individual bytes, however, and errors are hardcoded to a general-purpose I/O error type. Thus, it is neither possible to turn any \texttt{Stream} into a \texttt{Read}er, nor the other way around.
+To give a concrete example: in Rust, the (de-facto standard) \texttt{Stream} API\footnote{\url{https://docs.rs/futures/0.3.30/futures/stream/trait.Stream.html}} for receiving data from an asynchronous data source has no notion of irrecoverable errors. Meanwhile, the \texttt{Read} API\footnote{\url{https://doc.rust-lang.org/std/io/trait.Read.html}} for receiving many items from a data source with a single function call has a notion of irrecoverable errors. Items are hardcoded to individual bytes, however, and errors are hardcoded to a general-purpose I/O error type. Thus, it is neither possible to turn any \texttt{Stream} into a \texttt{Read}er, nor the other way around.
 
 Conceptually, these two APIs deal with the same issue: lazily producing a sequence. Rust has language-level mechanisms for expressing specialization of APIs and subtyping relations between APIs. Yet each of these abstractions is defined in isolation, with fundamentally different choices of expressivity that make it impossible to fluidly convert between them.
 
-Additional issues arise when considering the opposite of receiving data: sending data off to be processed somehow. The asynchronous, single-item \texttt{Sink}\footnote{\url{https://docs.rs/futures/0.3.30/futures/sink/trait.Sink.html}} is the conceptual analogon of the \texttt{Stream} API, yet it is more expressive, as it supports irrecoverable errors. On the other hand, while the \texttt{Stream} API has a synchronous counterpart in the \texttt{Iterator} API\footnote{\url{https://doc.rust-lang.org/std/iter/trait.Iterator.html}}, there is no such counterpart for \texttt{Sink}s.
+Additional issues arise when considering the opposite of receiving data: sending data off to be processed somehow. The asynchronous, single-item \texttt{Sink}\footnote{\url{https://docs.rs/futures/0.3.30/futures/sink/trait.Sink.html}} is the conceptual analogon of the \texttt{Stream} API, yet it also supports irrecoverable errors. On the other hand, while the \texttt{Stream} API has a synchronous counterpart in the \texttt{Iterator} API\footnote{\url{https://doc.rust-lang.org/std/iter/trait.Iterator.html}}, there is no such counterpart for \texttt{Sink}s.
 
-Such a lack of consistency causes unnecessary education efforts, forces programmers to adopt inefficient code (raw bytes are not the only items for which bulk processing is more efficient than individual processing), and introduces a frustrating barrier to expressing a conceptual architecture of data flows and error handling as actual code.
+Such a lack of consistency causes unnecessary education efforts, forces programmers to adopt inefficient code (raw bytes are not the only items for which bulk processing is more efficient than individual processing), and introduces frustratingly arbitrary barriers to expressing a conceptual architecture of data flows and error handling as actual code.
 
 Hence, the abstractions we propose emphasize consistency, and they build on top of each other. While that \textit{should} sound boring and obvious, it apparently \textit{is} not.
 
@@ -86,7 +86,7 @@ The criteria by which we shall evaluate lazy sequence abstractions are \textit{m
 
 Of these criteria, minimality is arguably the least controversial. Symmetry turns out to be the one we generally find the most neglected in the wild. Expressivity might have the weakest definition, but turns out to be rather unproblematic: real-world constraints on the APIs lead to a level of expressivity that also has a convincing formal counterpart --- the $\omega$-regular languages (see \cref{evaluating_ours} for details) --- making us quite confident about the appropriate level of expressivity.
 
-To obtain a first indicator for an appropriate level of expressivity, we examine the world of non-lazy sequences, i.e., sequences that can be fully stored in memory.
+To obtain a good indicator for an appropriate level of expressivity, we examine the world of non-lazy sequences, i.e., sequences that can be fully stored in memory.
 
 \subsection{Case Study: Strict Sequences}\label{strict_sequences}
 
@@ -102,7 +102,7 @@ Unlike strict sequences that have to fit into finite memory, lazy sequences can 
 
 The strict case also neatly validates the design goals of minimality and symmetry. Removing any combinator leads to a strictly less expressive class of languages, and every operator comes both with a way of building up values and with a way of accessing values.
 
-By generalizing the strict case to the lazy case, we can make our requirement of expressivity more precise, leading us to our final set of requirements: We want APIs for lazily producing or consuming sequences an item at a time, such that there is a one-to-one mapping between API instances and $\omega$-regular languages, no aspect of the APIs can be removed without loosing this one-to-one mapping, and there is full symmetry between consumption and production of sequences. Still not entirely formal, but close enough to meaningfully evaluate and design APIs.
+By generalizing the strict case to the lazy case, we can make our requirement of expressivity more precise, leading us to our final set of requirements: We want APIs for lazily producing or consuming sequences one item at a time, such that there is a one-to-one mapping between API instances and $\omega$-regular languages, no aspect of the APIs can be removed without loosing this one-to-one mapping, and there is full symmetry between consumption and production of sequences. Still not entirely formal, but close enough to meaningfully evaluate and design APIs.
 
 
 \section{Describing Abstractions}\label{evaluating_others}
@@ -132,7 +132,7 @@ We prefer the purely functional notation, because it can express the pinky-swear
 
 % Several languages do give the opposite of iterators a prominent role via specialzed loop statements that consume an iterator item by item. Handling sequence production via first-class values while turning sequence consumption into a purely syntactic component with no run-time presence massively breaks symmetry from a high level design perspective.
 
-Lazy sequence abstractions often come up in the context of asynchronous programming. Programming languages typically have an idiomatic approach to asynchronous functions; most modern languages have them return a \texttt{Future<T>} or \texttt{Promise<T>}, that is, a value that represents that some value of type $T$ will become available in the future. Other approaches include passing the code to process the result of the asynchronous function as a continuation (often called a \textit{callback}) or multithreading via lightweight process abstractions.
+Lazy sequence abstractions often come up in the context of asynchronous programming. Programming languages typically have an idiomatic approach to asynchronous functions; most modern languages have them return a \texttt{Future<T>} or \texttt{Promise<T>}, that is, a value that represents that some value of type $T$ will become available in the future. Other approaches include passing the code to process the result of the asynchronous function as a continuation (often called a \textit{callback}), or concurrency via lightweight process abstractions.
 
 We posit that there is little reason for the sequence abstractions to differ between synchronous and asynchronous settings. In most modern languages, the change to convert a synchronous function signature to an asynchronous one is purely mechanical. Hence, we will implicitly abstract over asynchrony and not mention it in our API designs.
 
@@ -162,7 +162,7 @@ Another kind of effect that \textit{will} come up later is that of errors. Simil
 
 \section{A Principled Design}\label{main_design}
 
-From this backdrop of rather inconsistent designs, we now present our alternatives. We derive --- in tandem --- APIs for producing and consuming sequences, guided by minimality, symmetry, and expressivity (\cref{derive}). Next, we argue that the designs are indeed sufficiently symmetric and of appropriate expressiveness (\cref{evaluating_ours}) --- if our arguments are not fully formal, they are at least \textit{formalizable}. Finally, we sketch some consequences the designs could have for language-level features such as generators or for loops (\cref{syntax}).
+We now derive APIs for producing and consuming sequences one item at a time, guided by minimality, symmetry, and expressivity (\cref{derive}). Next, we argue that the designs are indeed sufficiently symmetric and of appropriate expressiveness (\cref{evaluating_ours}) --- if our arguments are not fully formal, they are at least \textit{formalizable}. Finally, we sketch some consequences the designs could have for language-level features such as generators or for loops (\cref{syntax}).
 
 \subsection{Deriving Our Design}\label{derive}
 
@@ -173,14 +173,16 @@ API InfiniteProducer<P, I>
     produce: P -> (I, P)
 \end{lstlisting}
 
-An iterator, in contrast, expresses a \textit{finite} stream of items, by making the result of a sum type with a unit type otion to signal termination. We can easily abstract over both through a simple realization: we can rewrite the \texttt{produce} function of the \texttt{InfiniteProducer} as a sum with the empty type, without changing the semantics at all (it is impossible to provide an instance of the empty type, the empty type is the neutral element of type sums):
+An iterator, in contrast, expresses a \textit{finite} stream of items, by making the result of a sum type with a unit type option to signal termination. This is not to say that you could not implement infinite iterators, but the typing for those is unprecise --- a statically typed language forces programmers to provide code for the end-of-iteration case, even though they might now it will newer occur.
+
+We can easily abstract over both finite and infinite producers through a simple realization: we can rewrite the \texttt{produce} function of the \texttt{InfiniteProducer} as a sum with the empty type, without changing the semantics at all (it is impossible to provide an instance of the empty type, so the function must always return another item when called):
 
 \begin{lstlisting}[language=Python]
 API AlsoAnInfiniteProducer<P, I>
     produce: P -> (I, P) | !
 \end{lstlisting}
 
-Now, the infinite producer and the finite producer have the exact same form, and we can introduce a type parameter for the summand to express either:
+Now, the infinite producer and the finite iterator have the exact same form, and we can introduce a type parameter for the summand to express either:
 
 \begin{lstlisting}[language=Python]
 API Producer<P, I, F>
@@ -189,20 +191,22 @@ API Producer<P, I, F>
 
 Setting the type parameter \texttt{F} (for \textit{\textbf{f}inal item}) to \texttt{!} or \texttt{()} yields the infinite streams and the finite streams over a single type of items, respectively.
 
-Another natural choice for \texttt{F} are irrecoverable error types; most APIs with this design denote the type parameter as a type of errors explicitly. This denotation obscures how the same abstraction can also represent iterators or infinite streams, however.
+Another natural choice for \texttt{F} are irrecoverable error types; most APIs with this design designate the type parameter as a type of errors explicitly. This denotation obscures how the same abstraction can also represent iterators or infinite streams, however.
 
 Moreover, it obscures that \texttt{F} might be another producer itself, with which to continue production. Through this use of the API, we can effectively concatenate any producer after any finite producer. This usage is the cornerstone of achieving the expressivity of the $\omega$-regular languages, and one we have not encountered in the wild at all.
 
 To give a tangible example of how this degree of expressivity can be useful, consider a networking protocol that proceeds in stages: first a handshake for connection establishment, followed by an exchange of key-value pairs that signify the capabilities of an endpoint, followed by the application-level message exchange. With an API parameterized over arbitrary final values, you can implement each stage in a type-safe way, and then concatenate the stages both in execution and on the type-level. Traditional APIs force programmers to either lump the different kinds of messages (handshake, key-value pairs, application-level) into a single sum type, or to forego helpful typing altogether and operate on the level of bytes.
 
-A symmetric consumer API should be one that can be given either an item of type \texttt{I} --- returning a new consumer value to continue the process --- or a final item of some type \texttt{F} --- without returning a consumer to continue with. Ideally, we should be able to mechanically derrive this API as a dual of the producer API. A tempting option is to ``flip all arrows'' and simply swap argument and return type of the \texttt{produce} function:
+A symmetric consumer API should be one that can be given either an item of type \texttt{I} --- returning a new consumer value to continue the process --- or a final item of some type \texttt{F} --- without returning a consumer to continue with.
+
+Ideally, we should be able to mechanically derive this API as a dual of the producer API. A tempting option is to ``flip all arrows'' and simply swap argument and return type of the \texttt{produce} function:
 
 \begin{lstlisting}[language=Python]
 API Recudorp<P, I, F>
     ecudorp: ((I, P) | F) -> P
 \end{lstlisting}
 
-We can clean this up by splitting the function of a sum type argument into two independent functions (both versions are equivalent), and giving more conventional names:
+We can clean this up by splitting the function of a sum type argument into two independent functions (the resulting types are isomorphic), and giving more conventional names:
 
 \begin{lstlisting}[language=Python]
 API NotQuiteConsumer<C, I, F>
@@ -212,7 +216,7 @@ API NotQuiteConsumer<C, I, F>
 
 Unfortunately, this does not give the kind of API we were hoping for. The \texttt{consume} function is appropriate, but the second function is not closing a consumer, but creates a consumer. A straightforward dual construction gives too strong of a reversal to yield an API suitable for practical use.
 
-Instead of a fully dual construction, we instead derive a consumer API in steps analogous to those for deriving the \texttt{Producer} API. We start again with the consumers of an infinite sequence and the consumer of a finite sequence:
+Hence, Instead of a fully dual construction, we instead derive a consumer API in steps analogous to those for deriving the \texttt{Producer} API. We start again with the consumers of infinite sequences and the consumers of finite sequences:
 
 \begin{lstlisting}[language=Python]
 API InfiniteConsumer<C, I>
@@ -231,13 +235,59 @@ API Consumer<C, I, F>
     close: (F, C) -> ()
 \end{lstlisting}
 
-This API is fully symmetric to the \texttt{Producer}: the consumer can consume exactly those sequences that a producer can produce. It is rather unusual in that we have never seen an API whose \texttt{close} function takes an argument in the wild.
+This API is fully symmetric to the \texttt{Producer}: the consumer can consume exactly those sequences that a producer can produce, by feeding the final item into \textit{close}. It is rather unusual in that we have never seen an API whose \texttt{close} function takes an argument in the wild.
 
-Another unusual aspect is the inability of a consumer to report errors to its calling code. This is severe enough of a departure from typical APIs that we discuss this in more detail in \cref{communication_flow}. But first, we will argue that these \texttt{Producer} and \texttt{Consumer} APIs indeed fulfil our initial design requirements.
+Another unusual aspect is the inability of a consumer to report errors to its calling code. This is severe enough of a departure from typical APIs to warrant a dedicated discussion.
+
+\subsection{Communication Flow}\label{communication_flow}
+
+The inability to emit errors appears to make our proposed \texttt{Consumer} API unsuitable for network programming, for example. The underlying characteristics of the design are more general than just error reporting: code interacting with a \textit{consumer} can pass information \textit{to} the consumer but cannot obtain any information \textit{from} the consumer. Observe that conversely, code interacting with a \textit{producer} can obtain information \textit{from} the producer but cannot pass any information \textit{to} the producer.
+
+This rigorous a restriction on communication flows evokes design choices such as the unidirectional communication primitives of security-focussed micro-kernels like seL4~\cite{murray2013sel4}, so there clearly is a place for such constrained APIs. But the consumer API does not seem appropriate as a general-purpose API.
+
+Trying to add the missing communication flows raises some interesting questions. Should \texttt{consumer} return the next consumer \textit{and} another piece of information, or the next consumer \textit{or} another piece of information? What about \texttt{close} --- should it be able to return extra information, or not? How should symmetry be preserved --- does the \texttt{Producer} API require a \texttt{stop} function that lets the surrounding code communicate that (and why) \texttt{produce} will no longer be called? Should \texttt{produce} itself take a piece of information as input?
+
+Our fairly principled approach of aiming for  minimal, symmetric, regular-languagy APIs provides no guidance here, as these communication flows exist outside our semi-formalized problem domain. Any choices we need to make are essentially arbitrary.
+
+We see two ways out of this problem. The simplemost solution is acceptance. When a programmer wishes to write data to a network through a consumer interface, they need a corresponding producer to emit any feedback such as connection failures. Considering that typical networking APIs use the same error type for reading and writing data, this doesn't seem too far-fetched. Then again, the difficulties in migrating from more typical APIs to this style of error handling are hard to estimate. An argumentative essay like this one cannot conclusively establish a result, we merely want to raise that accepting a consumer API without error reporting might be more feasible than it appears at first glance.
+
+The other solution is to consider fallibility as an \textit{effect}. Just like the functions we use in our APIs might be asynchronous, they might also be fallible. Different programming languages could represent this in different ways: some could use exceptions, others could consistently use a \texttt{Result} type (a sum type of either the actual value of interest or an error value) --- the latter is a simple and classic example of monadic effect handling. We can keep using the same notation as before, but consider every function as possibly fallible.
+
+Nevertheless, it is instructive to look at the APIs that result from adding explicit error return options (of some type $E$) to all functions:
+
+\begin{lstlisting}[language=Python]
+API FallibleConsumer<C, I, F, E>
+    consume: (I, C) -> C | E
+    close: (F, C) -> () | E
+
+API FallibleProducer<P, I, F, E>
+    produce: P -> (I, P) | F | E
+\end{lstlisting}
+
+The APIs look quite asymmetric suddenly, because the \texttt{FallibleProducer} does not mirror the communication flow of the consumer, as that would require functions that take $E$s as arguments. Further, the return type of \texttt{produce} appears to violate minimality, as $E$ and $F$ could be combined into a single type parameter in principle. This demonstrates that the perspective of errors as effects is crucial to meaningfully evaluating sequence APIs --- both ours, and those in the wild.
+
+% It is interesting to consider that the \texttt{FallibleProducer} API appears asymmetric to the \texttt{FallibleConsumer} API without knowing about the context of errors-as-effects, as it does not mirror the communication flow of the consumer by having functions that take $E$s as arguments. The return type of \texttt{produce} also appears to violate minimality, as $E$ and $F$ could be combined into a single type parameter in principle. This invalidates our earlier criticism of the Swift-derived \texttt{FallibleIterator} API of \cref{evaluating_others}: a return type of \texttt{I | () | E} correctly separates the final item (hardcoded to type \texttt{()} in the Swift case) from the error effect of type $E$.
+
+% It took a few pages, but now we have a more nuanced view by which to understand the API designs encountered in the wild. This deeper understanding can hopefully serve to guide future API designs that otherwise would have to rely on gut-feeling and copying older designs.
+
+We will continue our discussion with the raw \texttt{Producer} and \texttt{Consumer} APIs, and leave it to the reader to decide whether their functions should be fallible (and/or asynchronous, for that matter), or not.
 
 \subsection{Evaluating Our Design}\label{evaluating_ours}
 
-Convincing arguments for the symmetry of the APIs are not immediately apparent; while we derived both APIs throuh analogous steps, they are not immediately dual in any obvious sense, and they even have a different number of functions. The closest we could come to a formal argument is to show that they compose in a satisfying way.
+Are our \texttt{Producer} and \texttt{Consumer} APIs minimal, symmetric, and expressive on the level of ($\omega$-) regular languages?
+
+\begin{lstlisting}[language=Python]
+API Producer<P, I, F>
+    produce: P -> (I, P) | F
+
+API Consumer<C, I, F>
+    consume: (I, C) -> C
+    close: (F, C) -> ()
+\end{lstlisting}
+
+Symmetry is not immediately apparent; there is no obvious sense in which the two APIs are dual. We derived the APIs in analogous steps, but that is not an inherent property. And they even have a different number of functions!
+
+Still, we can make a solid argument based on the observation that the APIs \textit{compose} in a satisfying way.
 
 Composing a producer with a consumer amounts to piping the data that the producer produces into the consumer:
 
@@ -257,15 +307,17 @@ Composing a producer with a consumer amounts to piping the data that the produce
 \EndProcedure
 \end{algorithmic}
 
-Notice that the \texttt{pipe} function returns the unit type, it leaks no information to the outside. More traditional APIs have no way to funnel the final (usually irrecoverable error) value of the producer to the consumer, so the pipe function has to return that value to the outside. Similarly, APIs that allow consumers to emit errors also have to forward such errors from the pipe function.
+% Notice that the \texttt{pipe} function returns the unit type, it leaks no information to the outside. More traditional APIs have no way to funnel the final (usually irrecoverable error) value of the producer to the consumer, so the pipe function has to return that value to the outside. Similarly, APIs that allow consumers to emit errors also have to forward such errors from the pipe function.
 
-On a purely abstract level, composing to the unit type evokes the concept of an element and its inverse composing to an identity element. This seems as strong a formal notion of symmetry we can hope for, without \textit{actually} formalizing things.
+The \texttt{pipe} function returns the unit type. On a purely abstract level, composing to the unit type evokes the concept of an element and its inverse composing to an identity element. This seems as strong a formal notion of symmetry (without \textit{actually} formalizing things) we can hope for, aside from immediate duality.
 
-More concretely, this means that a producer and a consumer together can fully describe a (sub-)program that processes a data stream. While traditional APIs also allow building up programs by combining and modifying producers and consumers, there always has to be ad-hoc glue code for handling errors, and for moving from one stage of processing to the next. Our APIs capture a fuller set of tasks of such programs. In principle, with an expressive library for constructing producers and consumers, it should be possible to describe much wider classes of programs by piping a single producer into a single consumer, with no glue code or ad-hoc error handling. In particular, progressing from one processing stage to the next can be done by having the producer emit a new producer as a final value, and the consumer pipe this value into an inner consumer in its \texttt{close} function.
+The \textit{close} function taking an argument nicely mirrors the \textit{produce} function emitting a final argument. In particular, if $F$ is another producer, then the consumer can \textit{pipe} it in its \textit{close} implementation into an inner consumer. The overall return type is still $()$ --- the unassuming \textit{pipe} function can handle multi-stage processing pipelines wihout any modification.
 
-We can make a similar argument for composing the other way around: it should be possible to create a pair of a consumer and a producer such that the producer produces everything that the consumer consumes, in the same order (an in-memory queue). This is, in some vague sense, the neutral element of transformation steps in a pipeline (we return to this concept in \cref{conducer}). Here again, we see the benefits of the \texttt{close} function taking an argument: we can map this argument directly to the final value to be emitted by \texttt{produce}.
+% More concretely, this means that a producer and a consumer together can fully describe a (sub-)program that processes a data stream. While traditional APIs also allow building up programs by combining and modifying producers and consumers, there always has to be ad-hoc glue code for handling errors, and for moving from one stage of processing to the next. Our APIs capture a fuller set of tasks of such programs. In principle, with an expressive library for constructing producers and consumers, it should be possible to describe much wider classes of programs by piping a single producer into a single consumer, with no glue code or ad-hoc error handling. In particular, progressing from one processing stage to the next can be done by having the producer emit a new producer as a final value, and the consumer pipe this value into an inner consumer in its \texttt{close} function.
 
-Libraries without this feature usually only offer queues parameterized over a single item type. One common tasks where this becomes unnecessarily restrictive include adding intermediate queues for buffering that can also delay propagating an error to the queue's consumer until all items that were emitted before the error have been consumed. Another usecase is testing: if you want to test a component by replacing its input producer with a stub, you cannot use the normal in-memory queue as a replacement, because it cannot emit final values (i.e., errors, in most libraries) on demand.
+We can make a similar compositional argument for composing the other way around: it should be possible to create a pair of a consumer and a producer such that the producer produces everything that the consumer consumes (in the same order, i.e., as an in-memory queue). Such a queue is, in some vague sense, the neutral element of transformation steps in a pipeline (we return to this concept in \cref{conducer}). Here, we see another benefit of the \texttt{close} function taking an argument: we can map this argument directly to the final value to be emitted by \texttt{produce}.
+
+% Libraries without this feature usually only offer queues parameterized over a single item type. One common tasks where this becomes unnecessarily restrictive include adding intermediate queues for buffering that can also delay propagating an error to the queue's consumer until all items that were emitted before the error have been consumed. Another usecase is testing: if you want to test a component by replacing its input producer with a stub, you cannot use the normal in-memory queue as a replacement, because it cannot emit final values (i.e., errors, in most libraries) on demand.
 
 Having argued that our design is indeed symmetric in a meaningful way, we turn to the question of expressivity. Our core argument rests on the observation that each \texttt{Producer} (or \texttt{Consumer}) defines a formal language over an alphabet of atomic types. More precisely, a \texttt{Producer<P, I, F>} emits an arbitrary number of repetitions of values of type $I$, followed by a single value of type $F$. In more traditional notation of a language as a set of strings, it denotes the set $\set{I}^{\ast} \circ \set{F}$.
 
@@ -273,44 +325,15 @@ Given this mapping from sequence APIs to languages, which class of languages do 
 
 The \textit{$\omega$-regular languages} over $\Sigma$ are the sets of infinite strings over $\Sigma$ that are either a concatenation of infinitely many words from the same regular language\footnote{We assume familiarity with regular languages, for an introduction see~\cite{hopcroft1969formal}, for example. Or do the sensible thing of searching for ``regular language'' on Wikipedia.} over $\Sigma$ (\textit{infinite iteration}), or the concatenation of a regular language and an $\omega$-regular language over $\Sigma$, or a choice between finitely many $\omega$-regular languages over $\Sigma$.
 
-As already argued in \cref{strict_sequences}, sum types and product tyes correspond to choice and concatenation of regular expressions respectively. Unlike the strict case, we cannot rely on homogeneous arrays to act as the counterpart to the Kleene operator, but this appears to be where the \texttt{Producer} API comes in (everything applies analogously for the \texttt{Consumer} API): a \texttt{Producer<P, I, F>} can produce an arbitrary number of repetitions of \texttt{I}s, followed by a single \texttt{F}. In particular, \texttt{Producer<P, I, ()>} corresponds to the Kleene operator, and \texttt{Producer<P, I, !>} corresponds to infinite iteration.
+As already argued in \cref{strict_sequences}, sum types and product tyes correspond to choice and concatenation of regular expressions respectively. Unlike the strict case, we cannot rely on homogeneous arrays to act as the counterpart to the Kleene operator, but this is where the \texttt{Producer} API comes in (everything applies analogously for the \texttt{Consumer} API): a \texttt{Producer<P, I, F>} can produce an arbitrary number of repetitions of \texttt{I}s, followed by a single \texttt{F}. In particular, a \texttt{Producer<P, I, ()>} corresponds to the Kleene operator, and a \texttt{Producer<P, I, !>} corresponds to infinite iteration.
 
 Unfortunately, this simple perspective is not fully accurate. Product types as concatenation are too powerful for us: consider a product $(P_1, P_2)$, where $P_1$ is a \texttt{Producer<P, I, !>}. The corresponding language would be a concatenation with an $\omega$-language on the left, but this is explicitly ruled out by the definition of $\omega$-regular languages. Another facet of the same problem is that the type $(S, T)$ is not one that describes \textit{first} emitting an $S$ and \textit{then} a $T$, as it presents both simultaneously.
 
 To solve this, we can restrict the set of well-formed sequence types we consider to pairs $(S, () \rightarrow T)$ for (sums of) non-repeated types $S$ and arbitrary types $T$, and \texttt{Producer<P, S, T>} for repeated types $S$. This removes the ability to express concatenations with an $\omega$-language as the left operand, and introduces the required indirection to express ``first $S$, then $T$'' (remember that we assume our functions to abstract over effects, so there might well be asynchronicity involved in obtaining the $T$ after processing the $S$).
 
-We shall not dwell on this subtlety any further, because it does not affect our two main points: our API is expressive enough to decribe regular ($\omega$-)regular languages, whereas a more traditional API \textit{without} a dedicated type for the final item is \textit{not} expressive enough, resulting in an unjustified reduction in expressive power compared to representing strict sequences in memory.
+We shall not dwell on this subtlety in greater detail, because it does not affect our two main points: our API is expressive enough to decribe regular ($\omega$-) regular languages, whereas a more traditional API \textit{without} a dedicated type for the final item is \textit{not} expressive enough, resulting in an unjustified reduction in expressive power compared to representing strict sequences in memory. In particular, traditional APIs cannot express concatenation of two sequences with different item types.
 
-\subsection{Communication Flow}\label{communication_flow}
-
-As already mentioned, our proposed \texttt{Consumer} API has no way of emitting errors to its calling code, a design decision that appears to make it unsuitable for network programming, for example. More generally speaking, code interacting with a \textit{consumer} can pass information \textit{to} the consumer but cannot obtain any information \textit{from} the consumer; and conversely, code interacting with a \textit{producer} can obtain information \textit{from} the producer but cannot pass any information \textit{to} the producer.
-
-This rigorous a restriction on communication flows evokes design choices such as the unidirectional communication primitives of security-focussed micro-kernels like seL4~\cite{murray2013sel4}, so there clearly is a place for such constrained APIs. But the consumer API does not seem appropriate as a general-purpose API.
-
-Trying to add the missing communication flows raises some interesting questions. Should \texttt{consumer} return the next consumer \textit{and} another piece of information, or the next consumer \textit{or} another piece of information? What about \texttt{close} --- should it be able to return extra information, or not? How should symmetry be preserved --- does the \texttt{Producer} API require a \texttt{stop} function that lets the surrounding code communicate that (and why) \texttt{produce} will no longer be called? Should \texttt{produce} itself take a piece of information as input?
-
-Our fairly principled approach of aiming for  minimal, symmetric, regular-languagy APIs provides no guidance here, as these communication flows are not part of the underlying problems. Any choices we need to make are essentially arbitrary.
-
-We see two ways out of this problem. The simplemost solution is acceptance. When a programmer wishes to write data to a network through a consumer interface, they need a corresponding producer to emit any feedback such as connection failures. Considering that typical networking APIs use the same error type for reading and writing data, this doesn't seem too far-fetched. Then again, the difficulties in migrating from more typical APIs to this style of error handling are hard to estimate. An argumentative essay like this one cannot conclusively establish a result, we merely want to raise that accepting a consumer API without error reporting might be more feasible than it appears at first glance.
-
-The other solution is to consider fallibility as an \textit{effect}. Just like the functions we use in our APIs might be asynchronous, they might also be fallible. Different programming languages can represent this in different ways: some could use exceptions, others could consistently use a \texttt{Result} type (a sum type of either the actual value of interest or an error value) --- the latter is a simple and classic example of monadic effect handling. We can keep using the same notation as before, but consider every function as possibly fallible.
-
-To make explicit the transformation from our APIs to fallible versions, here is what the results look like for errors of type $E$, when neither relying of exceptions nor on explicitly abstracting over effects via monads:
-
-\begin{lstlisting}[language=Python]
-API FallibleConsumer<C, I, F, E>
-    consume: (I, C) -> C | E
-    close: (F, C) -> () | E
-
-API FallibleProducer<P, I, F, E>
-    produce: P -> (I, P) | F | E
-\end{lstlisting}
-
-It is interesting to consider that the \texttt{FallibleProducer} API appears asymmetric to the \texttt{FallibleConsumer} API without the context of errors-as-effects, as it does not mirror the communication flow of the consumer by having functions that take $E$s as arguments. The return type of \texttt{produce} also appears to violate minimality, as $E$ and $F$ could be combined into a single type parameter in principle. This invalidates our earlier criticism of the Swift-derived \texttt{FallibleIterator} API of \cref{evaluating_others}: a return type of \texttt{I | () | E} correctly separates the final item (hardcoded to type \texttt{()} in the Swift case) from the error effect of type $E$.
-
-It took a few pages, but now we have a more nuanced view by which to understand the API designs encountered in the wild. This deeper understanding can hopefully serve to guide future API designs that otherwise would have to rely on gut-feeling and copying older designs.
-
-We will continue our investigation with the \texttt{Producer} and \texttt{Consumer} APIs as they are, it is up to the reader to decide whether their functions should be fallible (and/or asynchronous, for that matter), or not.
+Finally, our designs are indeed minimal: removing any feature reduces expressivity, because all features are necessary to obtain the correspondence to the ($\omega$-) regular languages.
 
 \section{Working With Producers and Consumers}
 
